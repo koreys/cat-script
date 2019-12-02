@@ -78,7 +78,15 @@ let test = function(data,x) {
     }
     /////////
     ///////// Materials ///////
-    if (data.desc.includes("The Home Depot") || data.desc.includes("Lowes Home Improvement") && +data.amt <= 100) {
+    if (data.desc.includes("The Home Depot") || data.desc.includes("Lowes Home Improvement") && +data.amt <= 200) {
+        let index = catagories.findIndex(i => i.catName == "Materials-Misc")
+        catagories[index].amount = money.add(catagories[index].amount, data.amt)
+        store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
+        activityList[x].catComplete = true 
+        return
+    }
+    if 
+    (data.desc.includes("HOME DEPOT") || data.desc.includes("LOWES OF MANCHESTER") && +data.amt <= 200) {
         let index = catagories.findIndex(i => i.catName == "Materials-Misc")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
         store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
@@ -88,14 +96,21 @@ let test = function(data,x) {
 
     /////// 
     /////// FOOD | Meals ///////
-    if (data.amexCat == "Transportation-Fuel" && +data.amt <= 10){
+    if (data.amexCat == "Transportation-Fuel" && +data.amt <= 15){
         let index = catagories.findIndex(i => i.catName == "Meals")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
         store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
         activityList[x].catComplete = true 
         return
     }
-    if (data.desc.includes("WAWA FUEL/CONVENIENCE") && +data.amt <= 10){
+    if (data.desc.includes("WAWA FUEL/CONVENIENCE") && +data.amt <= 15){
+        let index = catagories.findIndex(i => i.catName == "Meals")
+        catagories[index].amount = money.add(catagories[index].amount, data.amt)
+        store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
+        activityList[x].catComplete = true 
+        return
+    }
+    if (data.desc.includes("WAWA STORE") && +data.amt <= 15){
         let index = catagories.findIndex(i => i.catName == "Meals")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
         store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
@@ -106,6 +121,7 @@ let test = function(data,x) {
         data.desc.includes("EL FAMILIAR") ||
         data.desc.includes("PORTA") || 
         data.desc.includes("Panera Bread") || 
+        data.desc.includes("PANERA WALL TOWNSHIP") ||
         data.desc.includes("Dunkin' Donuts") || 
         data.desc.includes("SMASHBURGER") || 
         data.desc.includes("McDonald's") || 
@@ -115,6 +131,9 @@ let test = function(data,x) {
         data.desc.includes("Wendy's") || 
         data.desc.includes("SHAKE SHACK") || 
         data.desc.includes("Shake Shack") || 
+        data.desc.includes("Olive Garden") ||
+        data.desc.includes("BUFFALO WILD WINGS") || 
+        data.desc.includes("MOE'S SW GRILL") ||
         data.desc.includes("Domino's Pizza") || 
         data.desc.includes("Chili's Grill") ||
         data.desc.includes("Starbucks") ||
@@ -176,14 +195,14 @@ let test = function(data,x) {
     }
 
     ///////
-    /////// Health Care //////
+    /////// Medical //////
     if (data.desc.includes("Target") || 
         data.desc.includes("RITE AID") || 
         data.desc.includes("CVS") ||
         data.desc.includes("HARMON DISCOUNT") ||  
         data.desc.includes("WALGREENS") || 
         data.desc.includes("Walmart") && +data.amt <= 50 )  {
-        let index = catagories.findIndex(i => i.catName == "Health Care")
+        let index = catagories.findIndex(i => i.catName == "Medical")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
         store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
         activityList[x].catComplete = true 
@@ -192,7 +211,7 @@ let test = function(data,x) {
     if (data.desc.includes("ABILITIES IN ACTION") || 
         data.desc.includes("POLLACK HEALTH") ||
         data.desc.includes("JOEL MANZON DDS") ) {
-        let index = catagories.findIndex(i => i.catName == "Health Care")
+        let index = catagories.findIndex(i => i.catName == "Medical")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
         store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
         activityList[x].catComplete = true 
@@ -200,14 +219,14 @@ let test = function(data,x) {
     }
     
     if (data.desc.includes("OCEAN CROSSFIT")) {
-        let index = catagories.findIndex(i => i.catName == "Health Care")
+        let index = catagories.findIndex(i => i.catName == "Medical")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
         store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
         activityList[x].catComplete = true 
         return
     }
     if (data.desc.includes("SPORT CLIPS")) {
-        let index = catagories.findIndex(i => i.catName == "Health Care")
+        let index = catagories.findIndex(i => i.catName == "Medical")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
         store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
         activityList[x].catComplete = true 
@@ -215,6 +234,14 @@ let test = function(data,x) {
     }
     ///////
     /////// Others ////////
+    if (data.desc.includes("APPLE.COM/BILL") && +data.amt <= 100) {
+        let index = catagories.findIndex(i => i.catName == "Mobile Phones")
+        catagories[index].amount = money.add(catagories[index].amount, data.amt)
+        store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
+        activityList[x].catComplete = true 
+        return
+    }
+
     if (data.desc.includes("OCEAN COUNTY LANDFILL")) {
         let index = catagories.findIndex(i => i.catName == "Waste Disposal")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
@@ -225,8 +252,7 @@ let test = function(data,x) {
 
     if (data.desc.includes("Amazon Marketplace") ||
         data.desc.includes("AMAZON") ||
-        data.desc.includes("AMZN MKTP US") || 
-        data.desc.includes("HOME DEPOT") && +data.amt <= 50) {
+        data.desc.includes("AMZN MKTP US")) {
         let index = catagories.findIndex(i => i.catName == "Materials-Misc")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
         store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
