@@ -137,6 +137,10 @@ let test = function(data,x) {
         data.desc.includes("Domino's Pizza") || 
         data.desc.includes("Chili's Grill") ||
         data.desc.includes("Starbucks") ||
+        data.desc.includes("SALADWORKS") ||
+        data.desc.includes("PLAYA BOWLS") ||
+        data.desc.includes("SURF TACO") ||
+        data.desc.includes("KFC") ||
         data.desc.includes("BOOSKERDOO COFFEE") ||
         data.desc.includes("SUNSET DINER") ) {
         let index = catagories.findIndex(i => i.catName == "Meals")

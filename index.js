@@ -5,7 +5,9 @@ const csv = require('csv')
 const fs = require('fs')
 const chalk = require('chalk')
 const clear = require('clear')
-const money = require("money-math")
+//const money = require('money-math')
+//const Dinero = require('dinero.js')
+const currency = require('currency.js')
 let Table = require('cli-table3')
 const inquirer = require('inquirer')
 const pdf = require('html-pdf')
@@ -43,9 +45,9 @@ if(program.total) {
     stream
         .on("error", err => { return console.error(err.message) })
         .on('data', data => {
-            let desc = data[2]
-            let name = data[3]
-            let amt = data[5]
+            let desc = data[1]
+            let name = data[2]
+            let amt = data[4]
             if(desc != "ONLINE PAYMENT - THANK YOU") {
                 totalsList.push({ 'amt': amt, 'desc': desc, 'name': name })
             }
@@ -57,27 +59,33 @@ if(program.total) {
             //console.log(totalsList)
             totalsList.forEach(line => { 
                 //console.log(`Current totalAmt is: ${totalAmt} and the lines amt is ${line.amt}`)
-                totalAmt = money.add(totalAmt,line.amt)  
+                totalAmt = currency(totalAmt).add(line.amt)  
+                //totalAmt = Dinero({ amount: totalAmt }).add(Dinero({ amount: line.amt }))
                 if (line.name == "KOREY T STANLEY") {
-                    koreyAmt = money.add(koreyAmt, line.amt)
+                    //koreyAmt = money.add(koreyAmt, line.amt)
+                    koreyAmt = currency(koreyAmt).add(line.amt)
                 }
                 if (line.name == "KOLTON T STANLEY") {
-                    koltonAmt = money.add(koltonAmt, line.amt)
+                    koltonAmt = currency(koltonAmt).add(line.amt)
                 }
                 if (line.name == "GERRY K STANLEY") {
-                    gerryAmt = money.add(gerryAmt, line.amt)
+                    gerryAmt = currency(gerryAmt).add(line.amt)
+                    //gerryAmt = Dinero({ amount: gerryAmt }).add(Dinero({ amount: line.amt }))
                 }
                 if (line.name == "JENNIFER M STANLEY") {
-                    jenAmt = money.add(jenAmt, line.amt)
+                    jenAmt = currency(jenAmt).add(line.amt)
+                    //jenAmt = Dinero({ amount: jenAmt }).add(Dinero({ amount: line.amt }))
                 }
                 if (line.name == "DANA B STANLEY") {
-                    danaAmt = money.add(danaAmt, line.amt)
+                    danaAmt = currency(danaAmt).add(line.amt)
+                    //danaAmt = Dinero({ amount: danaAmt }).add(Dinero({ amount: line.amt }))
                 }
                 if (line.name == "IRENE A STANLEY") {
-                    ireneAmt = money.add(ireneAmt, line.amt)
+                    ireneAmt = currency(ireneAmt).add(line.amt)
+                    //ireneAmt = Dinero({ amount: ireneAmt }).add(Dinero({ amount: line.amt }))
                 }
             })
-            //console.log(`The total amount of parsed expenses is ${chalk.blue(totalAmt)}`)
+            console.log(`The total amount of parsed expenses is ${chalk.blue(totalAmt)}`)
 
             // outout total to a table
             let totalsTable = new Table({
@@ -90,13 +98,13 @@ if(program.total) {
                 },
                 colWidths: [20, 10]  //set the widths of each column (optional)
             })
-            totalsTable.push(['Korey', koreyAmt])
-            totalsTable.push(['Kolton', koltonAmt])
-            totalsTable.push(['Gerry', gerryAmt])
-            totalsTable.push(['Jennifer', jenAmt])
-            totalsTable.push(['Dana', danaAmt])
-            totalsTable.push(['Irene', ireneAmt])
-            totalsTable.push(['Total', totalAmt])
+            totalsTable.push(['Korey', koreyAmt.toString()])
+            totalsTable.push(['Kolton', koltonAmt.toString()])
+            totalsTable.push(['Gerry', gerryAmt.toString()])
+            totalsTable.push(['Jennifer', jenAmt.toString()])
+            totalsTable.push(['Dana', danaAmt.toString()])
+            totalsTable.push(['Irene', ireneAmt.toString()])
+            totalsTable.push(['Total', totalAmt.toString()])
             
             console.log(totalsTable.toString())
             // End output command line table
@@ -127,14 +135,14 @@ if(program.cat) {
         .on("error", err => { return console.error(err.message) })
         .on('data', data => {
             let date = data[0]
-            let ref = data[1].slice(1,-1)
-            let desc = data[2]
-            let name = data[3]
-            let amt = data[5]
-            let amexCat = data[6]
-            let type = data[7]
+            let ref = data[8].slice(1,-1)
+            let desc = data[1]
+            let name = data[2]
+            let amt = data[4]
+            let amexCat = data[9]
+            //let type = data[7]
             if(desc != "ONLINE PAYMENT - THANK YOU") {
-                activityList.push({date, ref, name, amt, desc, amexCat, type})
+                activityList.push({date, ref, name, amt, desc, amexCat})
             }
             
         })
@@ -145,8 +153,9 @@ if(program.cat) {
     
     let catagorize = function() {
         console.log(chalk.green(`Parse Complete. Total Rows parsed is: ${chalk.blue(activityList.length)} Beginning Catagorizing...`))
+        
         activityList.forEach((lineItem, index) => {  
-            totalAmt = money.add(totalAmt, lineItem.amt)
+            totalAmt = currency(totalAmt).add(lineItem.amt)
             test(lineItem, index) 
         })
         //console.log(catagories)
@@ -167,7 +176,7 @@ if(program.cat) {
         let row = []
         catagories.forEach(item => {
                 row.push(item.catName)
-                row.push(item.amount)
+                row.push(item.amount.toString())
                 colCount++
                 if((colCount % 3) == 0){
                     table1.push(row)
@@ -186,7 +195,7 @@ if(program.cat) {
                 totalCat1 += 1
             } else {
                 totalUnCat1 += 1
-                store.unCatAmt = money.add(store.unCatAmt, item.amt)
+                store.unCatAmt = currency(store.unCatAmt).add(item.amt)
             }
         })
 
@@ -206,7 +215,7 @@ if(program.cat) {
                 let question = {
                     type: 'rawlist',
                     name: item.ref,
-                    message: `Select Catagory for: ${chalk.grey(item.desc)}, ${item.name}, ${item.amt} `,
+                    message: `Select Catagory for: ${chalk.grey(item.desc)}, ${item.name}, ${item.amt.toString()} `,
                     choices: choices
                 }   
                 questions.push(question)
@@ -236,7 +245,7 @@ if(program.cat) {
                 let catagoryId = answer[questions[questionIndex].name]
                 let currentIndex = activityList.findIndex(i => i.ref == questions[questionIndex].name )
                 let currentAmt = activityList[currentIndex].amt
-                catagories[catagoryId-1].amount = money.add(catagories[catagoryId-1].amount, currentAmt)
+                catagories[catagoryId-1].amount = currency(catagories[catagoryId-1].amount).add(currentAmt)
                 
                 bar.tick(1)
                 questionIndex++
@@ -263,11 +272,11 @@ if(program.cat) {
             })
             let colCount = 0
             let row = []
-            let finalTotal = "0"
+            let finalTotal = 0
             catagories.forEach(item => {
-                    finalTotal = money.add(finalTotal, item.amount)
+                    finalTotal = currency(finalTotal).add(item.amount)
                     row.push(item.catName)
-                    row.push(item.amount)
+                    row.push(item.amount.toString())
                     colCount++
                     if((colCount % 3) == 0){
                         table2.push(row)
@@ -277,7 +286,7 @@ if(program.cat) {
             if(row.length > 0){
                 table2.push(row)
             }
-            let totalRow = ["Grand Total", { colSpan: 5, content: finalTotal }]
+            let totalRow = ["Grand Total", { colSpan: 5, content: finalTotal.toString() }]
             table2.push(totalRow)
             
 
@@ -314,7 +323,7 @@ if(program.cat) {
         let colCount = 0
         let tableRows = ""
         catagories.forEach(item => {
-            tableRows += `<td>${item.catName}</td><td align="right">${item.amount}</td>`
+            tableRows += `<td>${item.catName}</td><td align="right">${item.amount.toString()}</td>`
             colCount++
             if((colCount % 2) == 0){
                 tableRows += "</tr><tr>"
