@@ -135,11 +135,11 @@ if(program.cat) {
         .on("error", err => { return console.error(err.message) })
         .on('data', data => {
             let date = data[0]
-            let ref = data[8].slice(1,-1)
+            let ref = data[11].slice(1,-1)
             let desc = data[1]
             let name = data[2]
             let amt = data[4]
-            let amexCat = data[9]
+            let amexCat = data[12]
             //let type = data[7]
             if(desc != "ONLINE PAYMENT - THANK YOU") {
                 activityList.push({date, ref, name, amt, desc, amexCat})
@@ -231,7 +231,8 @@ if(program.cat) {
         bar.tick()
         console.log("\n")
         console.log(chalk.yellow(`There are ${chalk.red(totalUnCat1)} items left to catagorize.`))
-        console.log(`Total amount of items left to Cat: ${store.unCatAmt}`)
+        console.log(`Total amount of items left to Catagozie: ${store.unCatAmt}`)
+        //console.log(questions)
 
         
         let questionIndex = 0
@@ -256,6 +257,9 @@ if(program.cat) {
                     console.log("Writing report to disc...")
                     createReport()
                 }
+            })
+            .catch(err => {
+                console.log(`Error: Amount currently working on is: ${currentAmt}...My error is: ${err}`)
             })
         }
 

@@ -118,13 +118,21 @@ let test = function(data,x) {
         return
     }
     if (data.desc.includes("Chipotle") || 
+        data.desc.includes("CHIPOTLE") || 
         data.desc.includes("EL FAMILIAR") ||
         data.desc.includes("PORTA") || 
         data.desc.includes("Panera Bread") || 
         data.desc.includes("PANERA WALL TOWNSHIP") ||
         data.desc.includes("Dunkin' Donuts") || 
+        data.desc.includes("DUNKIN DONUTS") ||
         data.desc.includes("SMASHBURGER") || 
-        data.desc.includes("McDonald's") || 
+        data.desc.includes("McDonald's") ||
+        data.desc.includes("MCDONALD'S") || 
+        data.desc.includes("MCDONALDS") || 
+        data.desc.includes("Burger King") ||
+        data.desc.includes("Taco Bell") || 
+        data.desc.includes("WENDY'S") ||
+        data.desc.includes("ROY ROGERS") ||
         data.desc.includes("JERSEY MIKE") || 
         data.desc.includes("Jersey Mike") ||
         data.desc.includes("BJ'S REST 615") ||
@@ -137,10 +145,15 @@ let test = function(data,x) {
         data.desc.includes("Domino's Pizza") || 
         data.desc.includes("Chili's Grill") ||
         data.desc.includes("Starbucks") ||
+        data.desc.includes("MANHATTAN BAGEL") || 
         data.desc.includes("SALADWORKS") ||
         data.desc.includes("PLAYA BOWLS") ||
         data.desc.includes("SURF TACO") ||
         data.desc.includes("KFC") ||
+        data.desc.includes("Chick-fil-A") ||
+        data.desc.includes("BOSTON MARKET") ||
+        data.desc.includes("GRUBHUB*") ||
+        data.desc.includes("DOORDASH*") ||
         data.desc.includes("BOOSKERDOO COFFEE") ||
         data.desc.includes("SUNSET DINER") ) {
         let index = catagories.findIndex(i => i.catName == "Meals")
@@ -166,7 +179,7 @@ let test = function(data,x) {
         activityList[x].catComplete = true 
         return
     }
-    if (data.desc.includes("VULTR HOLDINGS") || data.desc.includes("DIGITALOCEAN.COM") ) {
+    if (data.desc.includes("VULTR HOLDINGS") || data.desc.includes("DIGITALOCEAN.COM") || data.desc.includes("Hover.com") ) {
         let index = catagories.findIndex(i => i.catName == "Office Supplies")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
         store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
@@ -283,6 +296,10 @@ let test = function(data,x) {
         data.desc.includes("Audible") || 
         data.desc.includes("BITPORT.IO") || 
         data.desc.includes("ADOBE *PHOTOGPHY") || 
+        data.desc.includes("ADOBE PHOTOGPHY") ||
+        data.desc.includes("DISNEY PLUS") || 
+        data.desc.includes("MOTLEY FOOL") || 
+        data.desc.includes("NODEHUB.IO") ||
         data.desc.includes("MICROSOFT*XBOX LIVE") ) {
         let index = catagories.findIndex(i => i.catName == "Dues & Subscriptions")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
@@ -306,6 +323,13 @@ let test = function(data,x) {
     }
     if (data.desc.includes("ARAMARK LINC FIN") ) {
         let index = catagories.findIndex(i => i.catName == "Advertising")
+        catagories[index].amount = money.add(catagories[index].amount, data.amt)
+        store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
+        activityList[x].catComplete = true 
+        return
+    }
+    if (data.desc.includes("Harbor Freight Tools") ) {
+        let index = catagories.findIndex(i => i.catName == "Tools & Equipment")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
         store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
         activityList[x].catComplete = true 
