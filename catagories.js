@@ -19,11 +19,14 @@ let catagories = [
     {id: 18, catName: "Dues & Subscriptions", amount: "0"},
     {id: 19, catName: "Vehical Maint", amount: "0"},
     {id: 20, catName: "Vehical Insurance", amount: "0"},
-    {id: 21, catName: "Advertising", amount: "0"},
-    {id: 22, catName: "Misc", amount: "0"},
-    {id: 23, catName: "Credit Card Fees", amount: "0"},
-    {id: 24, catName: "Internet", amount: "0"},
-    {id: 25, catName: "Tools & Equipment", amount: "0"}
+    {id: 21, catName: "Vehical Registration", amount: "0"},
+    {id: 22, catName: "Advertising", amount: "0"},
+    {id: 23, catName: "Misc", amount: "0"},
+    {id: 24, catName: "Credit Card Fees", amount: "0"},
+    {id: 25, catName: "Internet", amount: "0"},
+    {id: 26, catName: "Tools & Equipment", amount: "0"},
+    {id: 27, catName: "Building Maint & Upkeep", amount: "0"},
+    {id: 28, catName: "Subcontractor-Gutters", amount: "0"}
 ]
 
 module.exports =  catagories
