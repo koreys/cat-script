@@ -155,6 +155,7 @@ let test = function(data,x) {
         data.desc.includes("MOES SW GRILL") ||
         data.desc.includes("Domino's Pizza") || 
         data.desc.includes("Chili's Grill") ||
+        data.desc.includes("CHILI'S 0651") ||
         data.desc.includes("ANTONIOS GOURMET") ||
         data.desc.includes("ANTONIO'S GOURMET") ||
         data.desc.includes("NICK'S PIZZA") ||
@@ -171,6 +172,7 @@ let test = function(data,x) {
         data.desc.includes("BOSTON MARKET") ||
         data.desc.includes("GRUBHUB*") ||
         data.desc.includes("DOORDASH*") ||
+        data.desc.includes("*DOORDASH") ||
         data.desc.includes("DOORDASH DASHPASS") ||
         data.desc.includes("BOOSKERDOO COFFEE") ||
         data.desc.includes("TST* BOOSKERDOO") ||
@@ -286,6 +288,23 @@ let test = function(data,x) {
     }
     ///////
     /////// Others ////////
+    if (data.desc.includes("TRUGREEN")) {
+        let index = catagories.findIndex(i => i.catName == "Building Maint & Upkeep")
+        catagories[index].amount = money.add(catagories[index].amount, data.amt)
+        store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
+        activityList[x].catComplete = true 
+        return
+    }
+
+    if (data.desc.includes("EBAY") && +data.amt < 100){
+        let index = catagories.findIndex(i => i.catName == "Materials-Misc")
+        catagories[index].amount = money.add(catagories[index].amount, data.amt)
+        console.log(`Test Matched! autoCatamt is: ${autoCatAmt} and data.amt is ${data.amt}`)
+        store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
+        activityList[x].catComplete = true 
+        return
+    }
+
     if (data.desc.includes("STORM MASTERS")) {
         let index = catagories.findIndex(i => i.catName == "Subcontractor-Gutters")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
@@ -319,7 +338,7 @@ let test = function(data,x) {
         activityList[x].catComplete = true 
         return
     }
-    if (data.desc.includes("Amazon Prime")) {
+    if (data.desc.includes("Amazon Prime") || data.desc.includes("PRIME VIDEO")) {
         let index = catagories.findIndex(i => i.catName == "Office Supplies")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
         store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
