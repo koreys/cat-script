@@ -215,7 +215,7 @@ if(program.cat) {
                 let question = {
                     type: 'rawlist',
                     name: item.ref,
-                    message: `Select Catagory for: ${chalk.grey(item.desc)}, ${item.name}, ${item.amt.toString()} `,
+                    message: `Select Catagory for: ${chalk.yellow(item.desc)}, ${item.name}, ${item.amt.toString()} `,
                     choices: choices
                 }   
                 questions.push(question)

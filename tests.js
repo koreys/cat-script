@@ -55,7 +55,8 @@ let test = function(data,x) {
 
     ///////
     /////// Other Vehical ///////////
-    if (data.desc.includes("NEW JERSEY E-Z PASS")) {
+    if (data.desc.includes("NEW JERSEY E-Z PASS") ||
+        data.desc.includes("NJ EZPASS")) {
         let index = catagories.findIndex(i => i.catName == "EZ-PASS")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
         store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
@@ -169,6 +170,7 @@ let test = function(data,x) {
         data.desc.includes("SURF TAC") ||
         data.desc.includes("KFC") ||
         data.desc.includes("Chick-fil-A") ||
+        data.desc.includes("CHICK-FIL-A") ||
         data.desc.includes("BOSTON MARKET") ||
         data.desc.includes("GRUBHUB*") ||
         data.desc.includes("DOORDASH*") ||
@@ -178,6 +180,7 @@ let test = function(data,x) {
         data.desc.includes("TST* BOOSKERDOO") ||
         data.desc.includes("MELLOW MUSHROOM") ||
         data.desc.includes("ROOK COFFEE") ||
+        data.desc.includes("MAHANA FRESH") ||
         data.desc.includes("BAJA FRESH") ||
         data.desc.includes("SUNSET DINER") ) {
         let index = catagories.findIndex(i => i.catName == "Meals")
@@ -313,7 +316,7 @@ let test = function(data,x) {
         return
     }
 
-    if (data.desc.includes("APPLE.COM/BILL") && +data.amt <= 100) {
+    if (data.desc.includes("APPLE.COM") && +data.amt <= 75) {
         let index = catagories.findIndex(i => i.catName == "Mobile Phones")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
         store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
@@ -380,11 +383,12 @@ let test = function(data,x) {
         data.desc.includes("DISNEYPLUS") || 
         data.desc.includes("MOTLEY FOOL") || 
         data.desc.includes("SIRIUS XM") || 
-        data.desc.includes("ZOOM.US") || 
+        data.desc.includes("ZOOM.US") ||
+        data.desc.includes("ZOOM MEETING") || 
         data.desc.includes("DROPBOX") || 
         data.desc.includes("GRATEFUL DELI") ||
-        data.desc.includes("MAHANA FRESH") ||
         data.desc.includes("NODEHUB.IO") ||
+        data.desc.includes("Amazon Web Services") ||
         data.desc.includes("MICROSOFT*XBOX LIVE") ) {
         let index = catagories.findIndex(i => i.catName == "Dues & Subscriptions")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
