@@ -182,6 +182,8 @@ let test = function(data,x) {
         data.desc.includes("ROOK COFFEE") ||
         data.desc.includes("MAHANA FRESH") ||
         data.desc.includes("BAJA FRESH") ||
+        data.desc.includes("BUBBAKOOS") ||
+        data.desc.includes("ON THE BORDER") ||
         data.desc.includes("SUNSET DINER") ) {
         let index = catagories.findIndex(i => i.catName == "Meals")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
