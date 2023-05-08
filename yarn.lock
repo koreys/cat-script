@@ -457,9 +457,9 @@ minimist@^1.2.6:
   version "1.2.8"
   resolved "https://registry.yarnpkg.com/minimist/-/minimist-1.2.8.tgz#c1a464e7693302e082a075cee0c057741ac4772c"
 
-mixme@^0.3.1:
-  version "0.3.2"
-  resolved "https://registry.npmjs.org/mixme/-/mixme-0.3.2.tgz"
+mixme@^0.5.1:
+  version "0.5.5"
+  resolved "https://registry.yarnpkg.com/mixme/-/mixme-0.5.5.tgz#bf8f67d8caf10fdb49fd23198fd1fa6d8e406627"
 
 mkdirp@^0.5.4:
   version "0.5.6"
@@ -654,10 +654,10 @@ sshpk@^1.7.0:
     tweetnacl "~0.14.0"
 
 stream-transform@^2.0.1:
-  version "2.0.1"
-  resolved "https://registry.npmjs.org/stream-transform/-/stream-transform-2.0.1.tgz"
+  version "2.1.3"
+  resolved "https://registry.yarnpkg.com/stream-transform/-/stream-transform-2.1.3.tgz#a1c3ecd72ddbf500aa8d342b0b9df38f5aa598e3"
   dependencies:
-    mixme "^0.3.1"
+    mixme "^0.5.1"
 
 string-width@^2.1.1:
   version "2.1.1"
