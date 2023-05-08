@@ -222,6 +222,17 @@ let test = function(data,x) {
     }
 
     ///////
+    //////// Travel /////////
+    if (data.desc.includes("City of Asbury Park")) {
+        let index = catagories.findIndex(i => i.catName == "Travel")
+        catagories[index].amount = money.add(catagories[index].amount, data.amt)
+        store.autoCatAmt = money.add(store.autoCatAmt, data.amt)
+        activityList[x].catComplete = true 
+        return
+    }
+
+
+    ///////
     //////// Utilities /////////
     if (data.desc.includes("T-MOBILE") || data.desc.includes("TMOBILE*AUTO")) {
         let index = catagories.findIndex(i => i.catName == "Mobile Phones")
@@ -262,6 +273,9 @@ let test = function(data,x) {
     }
     if (data.desc.includes("ABILITIES IN ACTION") || 
         data.desc.includes("POLLACK HEALTH") ||
+        data.desc.includes("FISHBIRD") ||
+        data.desc.includes("WORD SLP, LLC") ||
+        data.desc.includes("DR. KYLE KLI") ||
         data.desc.includes("JOEL MANZON DDS") ) {
         let index = catagories.findIndex(i => i.catName == "Medical")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
