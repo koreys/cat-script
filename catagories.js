@@ -26,7 +26,9 @@ let catagories = [
     {id: 25, catName: "Internet", amount: "0"},
     {id: 26, catName: "Tools & Equipment", amount: "0"},
     {id: 27, catName: "Building Maint & Upkeep", amount: "0"},
-    {id: 28, catName: "Subcontractor-Gutters", amount: "0"}
+    {id: 28, catName: "Subcontractor-Gutters", amount: "0"},
+    {id: 29, catName: "Materials-Windows", amount: "0"},
+    {id: 30, catName: "Materials-Siding", amount: "0"}
 ]
 
 module.exports =  catagories
