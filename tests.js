@@ -142,6 +142,7 @@ let test = function(data,x) {
         data.desc.includes("Taco Bell") || 
         data.desc.includes("TACO BELL") || 
         data.desc.includes("WENDY'S") ||
+        data.desc.includes("MAHANA") ||
         data.desc.includes("ROY ROGERS") ||
         data.desc.includes("JERSEY MIKE") || 
         data.desc.includes("Jersey Mike") ||
@@ -212,6 +213,7 @@ let test = function(data,x) {
         data.desc.includes("VULTR") || 
         data.desc.includes("DIGITALOCEAN.COM") || 
         data.desc.includes("Hover.com") || 
+        data.desc.includes("MONGODBCLOUD") || 
         data.desc.includes("MICROSOFT*ULTIMATE") ||
         data.desc.includes("MICROSOFT*REALMS")) {
         let index = catagories.findIndex(i => i.catName == "Office Supplies")
@@ -403,6 +405,7 @@ let test = function(data,x) {
         data.desc.includes("ZOOM MEETING") || 
         data.desc.includes("DROPBOX") || 
         data.desc.includes("GRATEFUL DELI") ||
+        data.desc.includes("PEACOCK TV") ||
         data.desc.includes("NODEHUB.IO") ||
         data.desc.includes("Amazon Web Services") ||
         data.desc.includes("MICROSOFT*XBOX LIVE") ) {
