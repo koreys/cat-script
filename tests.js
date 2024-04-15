@@ -214,6 +214,7 @@ let test = function(data,x) {
         data.desc.includes("DIGITALOCEAN.COM") || 
         data.desc.includes("Hover.com") || 
         data.desc.includes("MONGODBCLOUD") || 
+        data.desc.includes("GOOGLE*GSUITE") ||
         data.desc.includes("MICROSOFT*ULTIMATE") ||
         data.desc.includes("MICROSOFT*REALMS")) {
         let index = catagories.findIndex(i => i.catName == "Office Supplies")
@@ -278,6 +279,7 @@ let test = function(data,x) {
         data.desc.includes("FISHBIRD") ||
         data.desc.includes("WORD SLP, LLC") ||
         data.desc.includes("DR. KYLE KLI") ||
+        data.desc.includes("OAKHURST DENTAL") ||
         data.desc.includes("JOEL MANZON DDS") ) {
         let index = catagories.findIndex(i => i.catName == "Medical")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
@@ -352,6 +354,7 @@ let test = function(data,x) {
 
     if (data.desc.includes("Amazon Marketplace") ||
         data.desc.includes("AMAZON") ||
+        data.desc.includes("AMERICAN WATER") ||
         data.desc.includes("AMZN MKTP US")) {
         let index = catagories.findIndex(i => i.catName == "Materials-Misc")
         catagories[index].amount = money.add(catagories[index].amount, data.amt)
