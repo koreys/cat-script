@@ -1,32 +1,80 @@
 #!/usr/bin/env node
 
+console.error('1. index.js starting')
+
+process.on('uncaughtException', err => {
+    console.error('UNCAUGHT EXCEPTION:')
+    console.error(err)
+})
+
+process.on('unhandledRejection', err => {
+    console.error('UNHANDLED REJECTION:')
+    console.error(err)
+})
+
+process.on('exit', code => {
+    console.error('PROCESS EXITING:', code)
+})
+
+console.error('2. Loading commander')
 const program = require('commander')
+
+console.error('3. Loading csv')
 const csv = require('csv')
+
+console.error('4. Loading fs')
 const fs = require('fs')
+
+console.error('5. Loading chalk')
 const chalk = require('chalk')
+
+console.error('6. Loading clear')
 const clear = require('clear')
-//const money = require('money-math')
-//const Dinero = require('dinero.js')
+
+console.error('7. Loading currency')
 const currency = require('currency.js')
+
+console.error('8. Loading cli-table3')
 let Table = require('cli-table3')
+
+console.error('9. Loading inquirer')
 const inquirer = require('inquirer')
+
+console.error('10. Loading html-pdf')
 const pdf = require('html-pdf')
+
+console.error('11. Loading progress')
 const ProgressBar = require('progress')
 
+console.error('12. Loading tests')
 const test = require('./tests')
+
+console.error('13. Loading categories')
 let catagories = require('./catagories')
+
+console.error('14. Loading store')
 let activityList = require('./store').activityList
 let store = require('./store')
 let totalAmt = require('./store').totalAmt
 
+console.error('15. All requires loaded')
+
 program
     .version('0.1')
-    .option('-c, --cat [pathToFile]', 'catagorize the contents of CSV file at path given')
-    .option('-t, --total [pathToFile]', 'grand total the expenses in the CSV file at path given')
+    .option('-c, --cat <pathToFile>', 'catagorize the contents of CSV file at path given')
+    .option('-t, --total <pathToFile>', 'grand total the expenses in the CSV file at path given')
     .parse(process.argv)
 
+const options = program.opts()
+
+console.error('16. Commander parsed')
+console.error('options:', options)
+
 //Start total function
-if (program.total) {
+if (options.total) {
+
+    console.error('17. Entering TOTAL mode')
+    console.error('Filename:', options.total)
 
     let totalsList = []
     //let totalAmt = "0"
@@ -38,7 +86,7 @@ if (program.total) {
     let ireneAmt = "0"
 
     let parse = csv.parse
-    let stream = fs.createReadStream(program.total)
+    let stream = fs.createReadStream(options.total)
         .pipe(parse({ delimiter: ',', columns: null }))
 
     stream
@@ -115,7 +163,7 @@ if (program.total) {
 
 
 //Start Cat function
-if (program.cat) {
+if (options.cat) {
 
     clear()
 
@@ -127,7 +175,7 @@ if (program.cat) {
     let totalUnCat2 = 0
 
     let parse = csv.parse
-    let stream = fs.createReadStream(program.cat)
+    let stream = fs.createReadStream(options.cat)
         .pipe(parse({ delimiter: ',', columns: null }))
 
     stream

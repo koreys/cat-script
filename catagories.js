@@ -30,8 +30,8 @@ let catagories = [
     {id: 29, catName: "Materials-Windows", amount: "0"},
     {id: 30, catName: "Materials-Siding", amount: "0"},
     {id: 31, catName: "Waste Dump Fees", amount: "0"},
-    {id: 32, catName: "Skyler Gas", amount: "0"}
-    {id: 32, catName: "Insurance-Liability", amount: "0"}
+    {id: 32, catName: "Skyler Gas", amount: "0"},
+    {id: 33, catName: "Insurance-Liability", amount: "0"}
 ]
 
 module.exports =  catagories
