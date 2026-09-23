@@ -20,7 +20,7 @@
     "currency.js": "^1.2.2",
     "dinero.js": "^1.6.0",
     "html-pdf": "^3.0.1",
-    "inquirer": "^8.2.6",
+    "inquirer": "^8.2.7",
     "money-math": "^2.5.1",
     "progress": "^2.0.3"
   }
