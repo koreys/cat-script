@@ -12,6 +12,9 @@ const error = ref("");
 const success = ref("");
 const showOnlyUncategorized = ref(true);
 const manualCategories = reactive({});
+const reviewedTransactions = reactive({});
+const ruleModalOpen = ref(false);
+const ruleModalTransactionId = ref(null);
 
 const fields = [
   ["description", "Description"],
@@ -58,6 +61,12 @@ const visibleTransactions = computed(() => {
 
 const autoCategorized = computed(() =>
   transactions.value.filter(transaction => transaction.match).length
+);
+
+const needReviewCount = computed(() =>
+  transactions.value.filter(
+    transaction => !transaction.match && !reviewedTransactions[transaction.id]
+  ).length
 );
 
 const formattedTotal = computed(() =>
@@ -129,6 +138,12 @@ async function importCsv() {
       delete manualCategories[key];
     }
 
+    for (const key of Object.keys(reviewedTransactions)) {
+      delete reviewedTransactions[key];
+    }
+
+    ruleModalOpen.value = false;
+    ruleModalTransactionId.value = null;
     success.value = "Import complete.";
   } catch (err) {
     error.value = err.message;
@@ -271,8 +286,14 @@ async function saveRule() {
       success.value = "Rule added.";
     }
 
+    const wasModalRule = ruleModalOpen.value;
     resetRuleDraft();
     await refreshSettings();
+
+    if (wasModalRule) {
+      ruleModalOpen.value = false;
+      ruleModalTransactionId.value = null;
+    }
   } catch (err) {
     error.value = err.message;
   }
@@ -335,8 +356,24 @@ function suggestedRuleFromTransaction(transaction) {
     ]
   });
 
-  activeTab.value = "rules";
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  ruleModalTransactionId.value = transaction.id;
+  ruleModalOpen.value = true;
+}
+
+function closeRuleModal() {
+  ruleModalOpen.value = false;
+  ruleModalTransactionId.value = null;
+  resetRuleDraft();
+}
+
+function markReviewed(transaction) {
+  if (transaction.match || manualCategories[transaction.id]) {
+    reviewedTransactions[transaction.id] = true;
+  }
+}
+
+function undoReviewed(transaction) {
+  delete reviewedTransactions[transaction.id];
 }
 </script>
 
@@ -392,7 +429,7 @@ function suggestedRuleFromTransaction(transaction) {
           </article>
           <article>
             <span>Need review</span>
-            <strong>{{ summary.uncategorized }}</strong>
+            <strong>{{ needReviewCount }}</strong>
           </article>
           <article>
             <span>Statement total</span>
@@ -423,7 +460,11 @@ function suggestedRuleFromTransaction(transaction) {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="transaction in visibleTransactions" :key="transaction.id">
+                <tr
+                    v-for="transaction in visibleTransactions"
+                    :key="transaction.id"
+                    :class="{ reviewed: reviewedTransactions[transaction.id] }"
+                  >
                   <td>{{ transaction.date }}</td>
                   <td>
                     <div class="merchant">{{ transaction.description }}</div>
@@ -462,13 +503,40 @@ function suggestedRuleFromTransaction(transaction) {
                     </select>
                   </td>
                   <td>
-                    <button
+                    <div
                       v-if="!transaction.match && manualCategories[transaction.id]"
-                      class="small secondary"
-                      @click="suggestedRuleFromTransaction(transaction)"
+                      class="row-actions"
                     >
-                      Create rule
-                    </button>
+                      <button
+                        class="small secondary"
+                        @click="suggestedRuleFromTransaction(transaction)"
+                      >
+                        Create rule
+                      </button>
+
+                      <button
+                        v-if="!reviewedTransactions[transaction.id]"
+                        class="small review-button"
+                        @click="markReviewed(transaction)"
+                      >
+                        ✓ Reviewed
+                      </button>
+
+                      <button
+                        v-else
+                        class="small ghost"
+                        @click="undoReviewed(transaction)"
+                      >
+                        Undo
+                      </button>
+                    </div>
+
+                    <span
+                      v-else-if="!transaction.match && reviewedTransactions[transaction.id]"
+                      class="pill matched"
+                    >
+                      Reviewed
+                    </span>
                   </td>
                 </tr>
               </tbody>
@@ -635,6 +703,97 @@ function suggestedRuleFromTransaction(transaction) {
         </div>
       </section>
     </main>
+
+    <div v-if="ruleModalOpen" class="modal-backdrop" @click.self="closeRuleModal">
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="rule-modal-title">
+        <div class="modal-header">
+          <div>
+            <div class="eyebrow modal-eyebrow">Create categorization rule</div>
+            <h2 id="rule-modal-title">New rule</h2>
+          </div>
+          <button class="icon-button" aria-label="Close" @click="closeRuleModal">×</button>
+        </div>
+
+        <div class="form-grid two">
+          <label>
+            <span>Rule name</span>
+            <input v-model="ruleDraft.name" type="text" />
+          </label>
+
+          <label>
+            <span>Category</span>
+            <select v-model="ruleDraft.categoryId">
+              <option value="">Choose category…</option>
+              <option
+                v-for="category in categories.filter(category => category.active)"
+                :key="category.id"
+                :value="category.id"
+              >
+                {{ category.name }}
+              </option>
+            </select>
+          </label>
+
+          <label>
+            <span>Priority</span>
+            <input v-model.number="ruleDraft.priority" type="number" min="1" />
+          </label>
+
+          <label>
+            <span>Match</span>
+            <select v-model="ruleDraft.matchMode">
+              <option value="all">ALL conditions</option>
+              <option value="any">ANY condition</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="conditions">
+          <div
+            v-for="(condition, index) in ruleDraft.conditions"
+            :key="index"
+            class="condition-row"
+          >
+            <select v-model="condition.field">
+              <option v-for="[value, label] in fields" :key="value" :value="value">
+                {{ label }}
+              </option>
+            </select>
+
+            <select v-model="condition.operator">
+              <option v-for="[value, label] in operators" :key="value" :value="value">
+                {{ label }}
+              </option>
+            </select>
+
+            <textarea
+              v-if="condition.operator === 'containsAny'"
+              rows="4"
+              :value="editValue(condition)"
+              placeholder="One value per line"
+              @input="setConditionValue(condition, $event.target.value)"
+            />
+
+            <input
+              v-else
+              :type="['gt','gte','lt','lte'].includes(condition.operator) ? 'number' : 'text'"
+              :value="editValue(condition)"
+              @input="setConditionValue(condition, $event.target.value)"
+            />
+
+            <button class="icon-button" @click="removeCondition(index)">×</button>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="secondary" @click="addCondition">Add condition</button>
+          <div class="modal-footer-actions">
+            <button class="ghost" @click="closeRuleModal">Cancel</button>
+            <button class="primary" @click="saveRule">Save rule</button>
+          </div>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -823,6 +982,32 @@ button {
 .small {
   padding: 6px 10px;
   font-size: 13px;
+}
+
+.review-button {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+tr.reviewed td {
+  background: #f3f4f6;
+  color: #8a94a3;
+}
+
+tr.reviewed .merchant {
+  color: #697386;
+}
+
+tr.reviewed select {
+  opacity: 0.72;
 }
 
 .summary-grid {
@@ -1058,6 +1243,54 @@ textarea {
   grid-template-columns: minmax(220px, 1fr) auto auto;
   gap: 12px;
   align-items: center;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(3px);
+}
+
+.modal-card {
+  width: min(900px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  background: white;
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.modal-header,
+.modal-footer,
+.modal-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal-header {
+  justify-content: space-between;
+}
+
+.modal-header h2 {
+  margin: 4px 0 0;
+}
+
+.modal-eyebrow {
+  color: #718096;
+}
+
+.modal-footer {
+  justify-content: space-between;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #e5e7eb;
 }
 
 @media (max-width: 900px) {
