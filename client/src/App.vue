@@ -554,6 +554,17 @@ async function undoReviewed(transaction) {
     error.value = err.message;
   }
 }
+
+function downloadStatement(format) {
+  if (!currentStatement.value?.id) return;
+
+  const endpoint =
+    format === "pdf"
+      ? "/api/statements/" + currentStatement.value.id + "/report.pdf"
+      : "/api/statements/" + currentStatement.value.id + "/export.csv";
+
+  window.location.href = endpoint;
+}
 </script>
 
 <template>
@@ -627,9 +638,20 @@ async function undoReviewed(transaction) {
           v-if="summary && needReviewCount === 0 && transactions.length"
           class="completion-card"
         >
-          <div>
-            <div class="completion-title">✓ Statement review complete</div>
-            <p>Every transaction has been categorized and reviewed.</p>
+          <div class="completion-header">
+            <div>
+              <div class="completion-title">✓ Statement review complete</div>
+              <p>Every transaction has been categorized and reviewed.</p>
+            </div>
+
+            <div class="export-actions">
+              <button class="secondary" @click="downloadStatement('csv')">
+                Export CSV
+              </button>
+              <button class="primary" @click="downloadStatement('pdf')">
+                Download PDF
+              </button>
+            </div>
           </div>
 
           <div class="completion-table">
@@ -1279,10 +1301,23 @@ tr.reviewed select {
   padding: 18px;
 }
 
+.completion-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .completion-title {
   color: #047857;
   font-weight: 750;
   font-size: 18px;
+}
+
+.export-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .completion-card p {
@@ -1619,6 +1654,10 @@ textarea {
 
   .category-row {
     grid-template-columns: 1fr;
+  }
+
+  .completion-header {
+    flex-direction: column;
   }
 
   .completion-row {
