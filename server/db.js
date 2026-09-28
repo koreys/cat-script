@@ -24,6 +24,23 @@ db.exec(
     "conditions_json TEXT NOT NULL DEFAULT '[]'," +
     "active INTEGER NOT NULL DEFAULT 1," +
     "FOREIGN KEY (category_id) REFERENCES categories(id)" +
+  ");" +
+  "CREATE TABLE IF NOT EXISTS statements (" +
+    "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+    "filename TEXT NOT NULL," +
+    "imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP," +
+    "status TEXT NOT NULL DEFAULT 'in_progress'" +
+  ");" +
+  "CREATE TABLE IF NOT EXISTS statement_transactions (" +
+    "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+    "statement_id INTEGER NOT NULL," +
+    "position INTEGER NOT NULL," +
+    "data_json TEXT NOT NULL," +
+    "match_json TEXT," +
+    "manual_category_id INTEGER," +
+    "reviewed INTEGER NOT NULL DEFAULT 0," +
+    "FOREIGN KEY (statement_id) REFERENCES statements(id) ON DELETE CASCADE," +
+    "FOREIGN KEY (manual_category_id) REFERENCES categories(id)" +
   ");"
 );
 
