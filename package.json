@@ -30,7 +30,8 @@
     "inquirer": "^8.2.6",
     "html-pdf": "^3.0.1",
     "money-math": "^2.5.1",
-    "progress": "^2.0.3"
+    "progress": "^2.0.3",
+    "pdfkit": "^0.17.2"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
