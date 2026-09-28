@@ -54,9 +54,71 @@ function newRule() {
 const ruleDraft = reactive(newRule());
 const categoryDraft = ref("");
 
+const groupedRows = computed(() => {
+  const rows = [];
+  const groups = new Map();
+
+  for (const transaction of transactions.value) {
+    if (transaction.match) {
+      rows.push({
+        ...transaction,
+        transactionIds: [transaction.id],
+        transactionCount: 1,
+        grouped: false
+      });
+      continue;
+    }
+
+    const key = String(transaction.description || "").trim().toUpperCase();
+
+    if (!groups.has(key)) {
+      const row = {
+        ...transaction,
+        transactionIds: [transaction.id],
+        transactionCount: 1,
+        grouped: false,
+        amount: Number(transaction.amount || 0),
+        cardMembers: new Set([transaction.cardMember]),
+        amexCategories: new Set([transaction.amexCategory]),
+        dates: new Set([transaction.date])
+      };
+      groups.set(key, row);
+      rows.push(row);
+      continue;
+    }
+
+    const row = groups.get(key);
+    row.transactionIds.push(transaction.id);
+    row.transactionCount += 1;
+    row.grouped = true;
+    row.amount += Number(transaction.amount || 0);
+    row.cardMembers.add(transaction.cardMember);
+    row.amexCategories.add(transaction.amexCategory);
+    row.dates.add(transaction.date);
+  }
+
+  return rows.map(row => {
+    if (!row.cardMembers) return row;
+
+    return {
+      ...row,
+      cardMember:
+        row.cardMembers.size === 1
+          ? [...row.cardMembers][0]
+          : "Multiple card members",
+      amexCategory:
+        row.amexCategories.size === 1
+          ? [...row.amexCategories][0]
+          : "Multiple AmEx categories",
+      date:
+        row.dates.size === 1 ? [...row.dates][0] : row.dates.size + " dates"
+    };
+  });
+});
+
 const visibleTransactions = computed(() => {
-  if (!showOnlyUncategorized.value) return transactions.value;
-  return transactions.value.filter(transaction => !transaction.match);
+  if (!showOnlyUncategorized.value) return groupedRows.value;
+  return groupedRows.value.filter(transaction => !transaction.match);
 });
 
 const autoCategorized = computed(() =>
@@ -321,8 +383,22 @@ async function deleteRule(rule) {
   }
 }
 
-function chooseManualCategory(transactionId, categoryId) {
-  manualCategories[transactionId] = Number(categoryId);
+function chooseManualCategory(transaction, categoryId) {
+  const value = Number(categoryId);
+
+  for (const transactionId of transaction.transactionIds || [transaction.id]) {
+    manualCategories[transactionId] = value;
+  }
+}
+
+function rowManualCategory(transaction) {
+  const ids = transaction.transactionIds || [transaction.id];
+  return manualCategories[ids[0]] || "";
+}
+
+function rowReviewed(transaction) {
+  const ids = transaction.transactionIds || [transaction.id];
+  return ids.every(id => reviewedTransactions[id]);
 }
 
 function categoryNameById(id) {
@@ -337,7 +413,7 @@ function transactionCategory(transaction) {
 }
 
 function suggestedRuleFromTransaction(transaction) {
-  const categoryId = manualCategories[transaction.id];
+  const categoryId = rowManualCategory(transaction);
   if (!categoryId) return;
 
   Object.assign(ruleDraft, {
@@ -356,7 +432,7 @@ function suggestedRuleFromTransaction(transaction) {
     ]
   });
 
-  ruleModalTransactionId.value = transaction.id;
+  ruleModalTransactionId.value = transaction.transactionIds?.[0] || transaction.id;
   ruleModalOpen.value = true;
 }
 
@@ -367,13 +443,17 @@ function closeRuleModal() {
 }
 
 function markReviewed(transaction) {
-  if (transaction.match || manualCategories[transaction.id]) {
-    reviewedTransactions[transaction.id] = true;
+  if (transaction.match || rowManualCategory(transaction)) {
+    for (const transactionId of transaction.transactionIds || [transaction.id]) {
+      reviewedTransactions[transactionId] = true;
+    }
   }
 }
 
 function undoReviewed(transaction) {
-  delete reviewedTransactions[transaction.id];
+  for (const transactionId of transaction.transactionIds || [transaction.id]) {
+    delete reviewedTransactions[transactionId];
+  }
 }
 </script>
 
@@ -443,7 +523,16 @@ function undoReviewed(transaction) {
               <input v-model="showOnlyUncategorized" type="checkbox" />
               Show only transactions needing review
             </label>
-            <span>{{ visibleTransactions.length }} shown</span>
+            <span>
+              {{ visibleTransactions.length }} rows ·
+              {{
+                visibleTransactions.reduce(
+                  (sum, transaction) => sum + (transaction.transactionCount || 1),
+                  0
+                )
+              }}
+              transactions
+            </span>
           </div>
 
           <div class="table-scroll">
@@ -463,11 +552,25 @@ function undoReviewed(transaction) {
                 <tr
                     v-for="transaction in visibleTransactions"
                     :key="transaction.id"
-                    :class="{ reviewed: reviewedTransactions[transaction.id] }"
+                    :class="{ reviewed: rowReviewed(transaction) }"
                   >
                   <td>{{ transaction.date }}</td>
                   <td>
-                    <div class="merchant">{{ transaction.description }}</div>
+                    <div class="merchant-line">
+                      <div class="merchant">{{ transaction.description }}</div>
+                      <span
+                        v-if="transaction.transactionCount > 1"
+                        class="group-badge"
+                      >
+                        {{ transaction.transactionCount }} transactions
+                      </span>
+                    </div>
+                    <div
+                      v-if="transaction.transactionCount > 1"
+                      class="group-note"
+                    >
+                      Combined amount for matching descriptions
+                    </div>
                     <div v-if="transaction.match" class="rule-hit">
                       Rule: {{ transaction.match.ruleName }}
                     </div>
@@ -489,8 +592,8 @@ function undoReviewed(transaction) {
 
                     <select
                       v-else
-                      :value="manualCategories[transaction.id] || ''"
-                      @change="chooseManualCategory(transaction.id, $event.target.value)"
+                      :value="rowManualCategory(transaction)"
+                      @change="chooseManualCategory(transaction, $event.target.value)"
                     >
                       <option value="">Choose category…</option>
                       <option
@@ -504,7 +607,7 @@ function undoReviewed(transaction) {
                   </td>
                   <td>
                     <div
-                      v-if="!transaction.match && manualCategories[transaction.id]"
+                      v-if="!transaction.match && rowManualCategory(transaction)"
                       class="row-actions"
                     >
                       <button
@@ -515,7 +618,7 @@ function undoReviewed(transaction) {
                       </button>
 
                       <button
-                        v-if="!reviewedTransactions[transaction.id]"
+                        v-if="!rowReviewed(transaction)"
                         class="small review-button"
                         @click="markReviewed(transaction)"
                       >
@@ -532,7 +635,7 @@ function undoReviewed(transaction) {
                     </div>
 
                     <span
-                      v-else-if="!transaction.match && reviewedTransactions[transaction.id]"
+                      v-else-if="!transaction.match && rowReviewed(transaction)"
                       class="pill matched"
                     >
                       Reviewed
@@ -1088,6 +1191,31 @@ td {
 
 .merchant {
   font-weight: 600;
+}
+
+.merchant-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.group-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.group-note {
+  margin-top: 3px;
+  color: #7c8798;
+  font-size: 12px;
 }
 
 .rule-hit {
