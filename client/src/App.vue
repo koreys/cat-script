@@ -16,6 +16,8 @@ const reviewedTransactions = reactive({});
 const ruleModalOpen = ref(false);
 const ruleModalTransactionId = ref(null);
 const currentStatement = ref(null);
+const selectedTransactions = reactive({});
+const bulkCategoryId = ref("");
 
 const fields = [
   ["description", "Description"],
@@ -122,6 +124,31 @@ const visibleTransactions = computed(() => {
   return groupedRows.value.filter(transaction => !transaction.match);
 });
 
+const selectableVisibleRows = computed(() =>
+  visibleTransactions.value.filter(transaction => !transaction.match)
+);
+
+const selectedTransactionIds = computed(() => {
+  const ids = [];
+
+  for (const transaction of selectableVisibleRows.value) {
+    for (const id of transaction.transactionIds || [transaction.id]) {
+      if (selectedTransactions[id]) ids.push(id);
+    }
+  }
+
+  return [...new Set(ids)];
+});
+
+const selectedRowCount = computed(() =>
+  selectableVisibleRows.value.filter(transaction => rowSelected(transaction)).length
+);
+
+const allVisibleSelected = computed(() =>
+  selectableVisibleRows.value.length > 0 &&
+  selectableVisibleRows.value.every(transaction => rowSelected(transaction))
+);
+
 const autoCategorized = computed(() =>
   transactions.value.filter(transaction => transaction.match).length
 );
@@ -198,6 +225,11 @@ function applyStatement(result) {
   for (const key of Object.keys(reviewedTransactions)) {
     delete reviewedTransactions[key];
   }
+
+  for (const key of Object.keys(selectedTransactions)) {
+    delete selectedTransactions[key];
+  }
+  bulkCategoryId.value = "";
 
   for (const transaction of transactions.value) {
     if (transaction.manualCategoryId) {
@@ -470,6 +502,69 @@ function rowReviewed(transaction) {
   return ids.every(id => reviewedTransactions[id]);
 }
 
+function rowSelected(transaction) {
+  const ids = transaction.transactionIds || [transaction.id];
+  return ids.every(id => selectedTransactions[id]);
+}
+
+function toggleRowSelection(transaction, checked) {
+  for (const id of transaction.transactionIds || [transaction.id]) {
+    if (checked) selectedTransactions[id] = true;
+    else delete selectedTransactions[id];
+  }
+}
+
+function toggleSelectAllVisible(checked) {
+  for (const transaction of selectableVisibleRows.value) {
+    toggleRowSelection(transaction, checked);
+  }
+}
+
+function clearSelection() {
+  for (const key of Object.keys(selectedTransactions)) {
+    delete selectedTransactions[key];
+  }
+  bulkCategoryId.value = "";
+}
+
+async function applyBulkCategory() {
+  const categoryId = Number(bulkCategoryId.value);
+  const ids = selectedTransactionIds.value;
+
+  if (!categoryId || !ids.length) return;
+
+  error.value = "";
+  success.value = "";
+
+  for (const id of ids) {
+    manualCategories[id] = categoryId;
+  }
+
+  try {
+    await api("/api/transactions/bulk", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ids,
+        manualCategoryId: categoryId
+      })
+    });
+
+    const categoryName = categoryNameById(categoryId);
+    const count = ids.length;
+    clearSelection();
+    success.value =
+      count +
+      " transaction" +
+      (count === 1 ? "" : "s") +
+      " categorized as " +
+      categoryName +
+      ".";
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
 function categoryNameById(id) {
   return categories.value.find(category => category.id === Number(id))?.name || "";
 }
@@ -675,6 +770,38 @@ function downloadStatement(format) {
         </div>
 
         <div v-if="transactions.length" class="table-card">
+          <div v-if="selectedRowCount" class="bulk-bar">
+            <strong>
+              {{ selectedRowCount }} row{{ selectedRowCount === 1 ? "" : "s" }} selected
+              · {{ selectedTransactionIds.length }} transaction{{ selectedTransactionIds.length === 1 ? "" : "s" }}
+            </strong>
+
+            <div class="bulk-actions">
+              <select v-model="bulkCategoryId">
+                <option value="">Choose category…</option>
+                <option
+                  v-for="category in categories.filter(category => category.active)"
+                  :key="category.id"
+                  :value="category.id"
+                >
+                  {{ category.name }}
+                </option>
+              </select>
+
+              <button
+                class="primary"
+                :disabled="!bulkCategoryId"
+                @click="applyBulkCategory"
+              >
+                Apply category
+              </button>
+
+              <button class="ghost" @click="clearSelection">
+                Clear
+              </button>
+            </div>
+          </div>
+
           <div class="table-toolbar">
             <label class="checkbox-row">
               <input v-model="showOnlyUncategorized" type="checkbox" />
@@ -696,6 +823,15 @@ function downloadStatement(format) {
             <table>
               <thead>
                 <tr>
+                  <th class="select-column">
+                    <input
+                      type="checkbox"
+                      :checked="allVisibleSelected"
+                      :disabled="!selectableVisibleRows.length"
+                      aria-label="Select all visible rows"
+                      @change="toggleSelectAllVisible($event.target.checked)"
+                    />
+                  </th>
                   <th>Date</th>
                   <th>Description</th>
                   <th>Card Member</th>
@@ -711,6 +847,15 @@ function downloadStatement(format) {
                     :key="transaction.id"
                     :class="{ reviewed: rowReviewed(transaction) }"
                   >
+                  <td class="select-column">
+                    <input
+                      v-if="!transaction.match"
+                      type="checkbox"
+                      :checked="rowSelected(transaction)"
+                      aria-label="Select transaction row"
+                      @change="toggleRowSelection(transaction, $event.target.checked)"
+                    />
+                  </td>
                   <td>{{ transaction.date }}</td>
                   <td>
                     <div class="merchant-line">
@@ -1349,6 +1494,29 @@ tr.reviewed select {
   overflow: hidden;
 }
 
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-bottom: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bulk-actions select {
+  min-width: 220px;
+}
+
 .table-toolbar {
   justify-content: space-between;
   padding: 12px 14px;
@@ -1388,6 +1556,15 @@ th {
 
 td {
   font-size: 14px;
+}
+
+.select-column {
+  width: 42px;
+  text-align: center;
+}
+
+.select-column input {
+  width: auto;
 }
 
 .money {
