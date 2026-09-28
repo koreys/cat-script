@@ -3,6 +3,7 @@ const path = require("path");
 const express = require("express");
 const multer = require("multer");
 const cors = require("cors");
+const PDFDocument = require("pdfkit");
 
 const db = require("./db");
 const { parseAmexCsv } = require("./csvImporter");
@@ -21,6 +22,142 @@ app.use(express.json({ limit: "1mb" }));
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
+});
+
+app.get("/api/statements/:id/export.csv", (req, res) => {
+  const report = statementResponse(Number(req.params.id));
+  if (!report) {
+    return res.status(404).json({ error: "Statement not found." });
+  }
+
+  if (!statementIsComplete(report.transactions)) {
+    return res.status(409).json({ error: "Finish reviewing the statement before exporting." });
+  }
+
+  const rows = [
+    [
+      "Date",
+      "Description",
+      "Card Member",
+      "Amount",
+      "AmEx Category",
+      "Final Category",
+      "Categorized By",
+      "Reviewed"
+    ]
+  ];
+
+  for (const transaction of report.transactions) {
+    const finalCategory =
+      transaction.match?.categoryName ||
+      transaction.manualCategoryName ||
+      "";
+
+    const categorizedBy = transaction.match
+      ? "Rule: " + transaction.match.ruleName
+      : "Manual";
+
+    rows.push([
+      transaction.date,
+      transaction.description,
+      transaction.cardMember,
+      Number(transaction.amount || 0).toFixed(2),
+      transaction.amexCategory,
+      finalCategory,
+      categorizedBy,
+      transaction.match ? "Auto" : transaction.reviewed ? "Yes" : "No"
+    ]);
+  }
+
+  const csv = rows.map(row => row.map(csvCell).join(",")).join("\r\n");
+  const baseName = safeBaseName(report.statement.filename);
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    'attachment; filename="' + baseName + '-categorized.csv"'
+  );
+  return res.send("\uFEFF" + csv);
+});
+
+app.get("/api/statements/:id/report.pdf", (req, res) => {
+  const report = statementResponse(Number(req.params.id));
+  if (!report) {
+    return res.status(404).json({ error: "Statement not found." });
+  }
+
+  if (!statementIsComplete(report.transactions)) {
+    return res.status(409).json({ error: "Finish reviewing the statement before exporting." });
+  }
+
+  const totals = categorySummary(report.transactions);
+  const baseName = safeBaseName(report.statement.filename);
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    'attachment; filename="' + baseName + '-category-report.pdf"'
+  );
+
+  const doc = new PDFDocument({
+    size: "LETTER",
+    margins: { top: 54, right: 54, bottom: 54, left: 54 }
+  });
+
+  doc.pipe(res);
+
+  doc.fontSize(20).font("Helvetica-Bold").text("American Express Categorization Report");
+  doc.moveDown(0.35);
+  doc.fontSize(10).font("Helvetica").fillColor("#555555");
+  doc.text("Twin Building Inc.");
+  doc.text("Source: " + report.statement.filename);
+  doc.text("Imported: " + new Date(report.statement.imported_at + "Z").toLocaleString("en-US"));
+  doc.moveDown(1);
+
+  doc.fillColor("#111111").fontSize(12).font("Helvetica-Bold");
+  doc.text("Statement Summary");
+  doc.moveDown(0.45);
+
+  doc.font("Helvetica").fontSize(10);
+  doc.text("Transactions: " + report.summary.transactions);
+  doc.text("Statement total: " + formatMoney(report.summary.total));
+  doc.moveDown(1);
+
+  const startX = doc.page.margins.left;
+  const widths = [260, 90, 120];
+  let y = doc.y;
+
+  drawPdfRow(doc, y, startX, widths, ["Category", "Transactions", "Amount"], true);
+  y += 24;
+
+  for (const item of totals) {
+    if (y > 700) {
+      doc.addPage();
+      y = doc.page.margins.top;
+      drawPdfRow(doc, y, startX, widths, ["Category", "Transactions", "Amount"], true);
+      y += 24;
+    }
+
+    drawPdfRow(
+      doc,
+      y,
+      startX,
+      widths,
+      [item.category, String(item.count), formatMoney(item.amount)],
+      false
+    );
+    y += 22;
+  }
+
+  y += 8;
+  doc.moveTo(startX, y).lineTo(startX + widths.reduce((a, b) => a + b, 0), y).strokeColor("#999999").stroke();
+  y += 10;
+  doc.font("Helvetica-Bold").fillColor("#111111");
+  doc.text("Grand Total", startX, y, { width: widths[0] });
+  doc.text(String(report.summary.transactions), startX + widths[0], y, { width: widths[1], align: "right" });
+  doc.text(formatMoney(report.summary.total), startX + widths[0] + widths[1], y, { width: widths[2], align: "right" });
+
+  doc.end();
 });
 
 app.get("/api/statements/current", (_req, res) => {
@@ -86,7 +223,12 @@ app.patch("/api/transactions/bulk", (req, res) => {
     )
     .get(ids[0]);
 
-  return res.json(statement ? statementResponse(statement.statement_id) : { ok: true });
+  if (statement) {
+    updateStatementStatus(statement.statement_id);
+    return res.json(statementResponse(statement.statement_id));
+  }
+
+  return res.json({ ok: true });
 });
 
 app.get("/api/categories", (_req, res) => {
@@ -311,6 +453,105 @@ function statementResponse(statementId) {
     },
     transactions
   };
+}
+
+
+
+function statementIsComplete(transactions) {
+  return transactions.every(
+    transaction => transaction.match || (transaction.manualCategoryId && transaction.reviewed)
+  );
+}
+
+function updateStatementStatus(statementId) {
+  const report = statementResponse(statementId);
+  if (!report) return;
+
+  const status = statementIsComplete(report.transactions)
+    ? "completed"
+    : "in_progress";
+
+  db.prepare("UPDATE statements SET status = ? WHERE id = ?").run(
+    status,
+    statementId
+  );
+}
+
+function finalCategoryName(transaction) {
+  return (
+    transaction.match?.categoryName ||
+    transaction.manualCategoryName ||
+    ""
+  );
+}
+
+function categorySummary(transactions) {
+  const totals = new Map();
+
+  for (const transaction of transactions) {
+    const category = finalCategoryName(transaction);
+    if (!category) continue;
+
+    const current = totals.get(category) || {
+      category,
+      count: 0,
+      amount: 0
+    };
+
+    current.count += 1;
+    current.amount += Number(transaction.amount || 0);
+    totals.set(category, current);
+  }
+
+  return [...totals.values()].sort((a, b) =>
+    a.category.localeCompare(b.category)
+  );
+}
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  if (/[",\\r\\n]/.test(text)) {
+    return '"' + text.replace(/"/g, '""') + '"';
+  }
+  return text;
+}
+
+function safeBaseName(filename) {
+  return String(filename || "activity")
+    .replace(/\\.csv$/i, "")
+    .replace(/[^a-z0-9._-]+/gi, "-")
+    .replace(/^-+|-+$/g, "") || "activity";
+}
+
+function formatMoney(value) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD"
+  }).format(Number(value || 0));
+}
+
+function drawPdfRow(doc, y, startX, widths, values, header) {
+  let x = startX;
+
+  if (header) {
+    doc
+      .rect(startX, y - 5, widths.reduce((a, b) => a + b, 0), 22)
+      .fill("#F3F4F6");
+  }
+
+  doc
+    .fillColor("#111111")
+    .font(header ? "Helvetica-Bold" : "Helvetica")
+    .fontSize(9);
+
+  values.forEach((value, index) => {
+    doc.text(String(value), x + 4, y, {
+      width: widths[index] - 8,
+      align: index === 0 ? "left" : "right",
+      ellipsis: true
+    });
+    x += widths[index];
+  });
 }
 
 
