@@ -141,6 +141,32 @@ const formattedTotal = computed(() =>
     : "$0.00"
 );
 
+const categoryTotals = computed(() => {
+  const totals = new Map();
+
+  for (const transaction of transactions.value) {
+    const categoryName =
+      transaction.match?.categoryName ||
+      categoryNameById(manualCategories[transaction.id]);
+
+    if (!categoryName) continue;
+
+    const current = totals.get(categoryName) || {
+      category: categoryName,
+      count: 0,
+      amount: 0
+    };
+
+    current.count += 1;
+    current.amount += Number(transaction.amount || 0);
+    totals.set(categoryName, current);
+  }
+
+  return [...totals.values()].sort((a, b) =>
+    a.category.localeCompare(b.category)
+  );
+});
+
 onMounted(async () => {
   await refreshSettings();
   await loadCurrentStatement();
@@ -595,6 +621,35 @@ async function undoReviewed(transaction) {
             <span>Statement total</span>
             <strong>{{ formattedTotal }}</strong>
           </article>
+        </div>
+
+        <div
+          v-if="summary && needReviewCount === 0 && transactions.length"
+          class="completion-card"
+        >
+          <div>
+            <div class="completion-title">✓ Statement review complete</div>
+            <p>Every transaction has been categorized and reviewed.</p>
+          </div>
+
+          <div class="completion-table">
+            <div
+              v-for="item in categoryTotals"
+              :key="item.category"
+              class="completion-row"
+            >
+              <span>{{ item.category }}</span>
+              <span>{{ item.count }} transactions</span>
+              <strong>
+                {{
+                  new Intl.NumberFormat("en-US", {
+                    style: "currency",
+                    currency: "USD"
+                  }).format(item.amount)
+                }}
+              </strong>
+            </div>
+          </div>
         </div>
 
         <div v-if="transactions.length" class="table-card">
@@ -1217,6 +1272,42 @@ tr.reviewed select {
   font-size: 24px;
 }
 
+.completion-card {
+  border: 1px solid #a7f3d0;
+  border-radius: 14px;
+  background: #f0fdf4;
+  padding: 18px;
+}
+
+.completion-title {
+  color: #047857;
+  font-weight: 750;
+  font-size: 18px;
+}
+
+.completion-card p {
+  margin: 4px 0 14px;
+  color: #4b6358;
+}
+
+.completion-table {
+  display: grid;
+  gap: 7px;
+}
+
+.completion-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 140px 120px;
+  gap: 12px;
+  align-items: center;
+  padding: 7px 0;
+  border-top: 1px solid #d1fae5;
+}
+
+.completion-row strong {
+  text-align: right;
+}
+
 .table-card {
   border: 1px solid #e2e7ee;
   border-radius: 12px;
@@ -1528,6 +1619,15 @@ textarea {
 
   .category-row {
     grid-template-columns: 1fr;
+  }
+
+  .completion-row {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .completion-row strong {
+    text-align: left;
   }
 }
 </style>
