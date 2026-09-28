@@ -15,6 +15,7 @@ const manualCategories = reactive({});
 const reviewedTransactions = reactive({});
 const ruleModalOpen = ref(false);
 const ruleModalTransactionId = ref(null);
+const currentStatement = ref(null);
 
 const fields = [
   ["description", "Description"],
@@ -142,6 +143,7 @@ const formattedTotal = computed(() =>
 
 onMounted(async () => {
   await refreshSettings();
+  await loadCurrentStatement();
 });
 
 async function api(url, options = {}) {
@@ -154,6 +156,42 @@ async function api(url, options = {}) {
 
   if (response.status === 204) return null;
   return response.json();
+}
+
+function applyStatement(result) {
+  if (!result) return;
+
+  currentStatement.value = result.statement || null;
+  summary.value = result.summary;
+  transactions.value = result.transactions || [];
+
+  for (const key of Object.keys(manualCategories)) {
+    delete manualCategories[key];
+  }
+
+  for (const key of Object.keys(reviewedTransactions)) {
+    delete reviewedTransactions[key];
+  }
+
+  for (const transaction of transactions.value) {
+    if (transaction.manualCategoryId) {
+      manualCategories[transaction.id] = Number(transaction.manualCategoryId);
+    }
+    if (transaction.reviewed) {
+      reviewedTransactions[transaction.id] = true;
+    }
+  }
+}
+
+async function loadCurrentStatement() {
+  try {
+    const response = await fetch("/api/statements/current");
+    if (response.status === 204) return;
+    if (!response.ok) throw new Error("Could not load the current statement.");
+    applyStatement(await response.json());
+  } catch (err) {
+    error.value = err.message;
+  }
 }
 
 async function refreshSettings() {
@@ -193,16 +231,7 @@ async function importCsv() {
       body: formData
     });
 
-    summary.value = result.summary;
-    transactions.value = result.transactions;
-
-    for (const key of Object.keys(manualCategories)) {
-      delete manualCategories[key];
-    }
-
-    for (const key of Object.keys(reviewedTransactions)) {
-      delete reviewedTransactions[key];
-    }
+    applyStatement(result);
 
     ruleModalOpen.value = false;
     ruleModalTransactionId.value = null;
@@ -383,11 +412,25 @@ async function deleteRule(rule) {
   }
 }
 
-function chooseManualCategory(transaction, categoryId) {
+async function chooseManualCategory(transaction, categoryId) {
   const value = Number(categoryId);
+  const ids = transaction.transactionIds || [transaction.id];
 
-  for (const transactionId of transaction.transactionIds || [transaction.id]) {
+  for (const transactionId of ids) {
     manualCategories[transactionId] = value;
+  }
+
+  try {
+    await api("/api/transactions/bulk", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ids,
+        manualCategoryId: value
+      })
+    });
+  } catch (err) {
+    error.value = err.message;
   }
 }
 
@@ -442,17 +485,47 @@ function closeRuleModal() {
   resetRuleDraft();
 }
 
-function markReviewed(transaction) {
-  if (transaction.match || rowManualCategory(transaction)) {
-    for (const transactionId of transaction.transactionIds || [transaction.id]) {
-      reviewedTransactions[transactionId] = true;
-    }
+async function markReviewed(transaction) {
+  if (!transaction.match && !rowManualCategory(transaction)) return;
+
+  const ids = transaction.transactionIds || [transaction.id];
+
+  for (const transactionId of ids) {
+    reviewedTransactions[transactionId] = true;
+  }
+
+  try {
+    await api("/api/transactions/bulk", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ids,
+        reviewed: true
+      })
+    });
+  } catch (err) {
+    error.value = err.message;
   }
 }
 
-function undoReviewed(transaction) {
-  for (const transactionId of transaction.transactionIds || [transaction.id]) {
+async function undoReviewed(transaction) {
+  const ids = transaction.transactionIds || [transaction.id];
+
+  for (const transactionId of ids) {
     delete reviewedTransactions[transactionId];
+  }
+
+  try {
+    await api("/api/transactions/bulk", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ids,
+        reviewed: false
+      })
+    });
+  } catch (err) {
+    error.value = err.message;
   }
 }
 </script>
@@ -487,7 +560,14 @@ function undoReviewed(transaction) {
         <div class="section-header">
           <div>
             <h2>Monthly statement</h2>
-            <p>Upload the AmEx CSV and let the rules do the first pass.</p>
+            <p>
+              <template v-if="currentStatement">
+                Working on {{ currentStatement.filename }} · progress saves automatically.
+              </template>
+              <template v-else>
+                Upload the AmEx CSV and let the rules do the first pass.
+              </template>
+            </p>
           </div>
         </div>
 
