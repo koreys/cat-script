@@ -23,6 +23,72 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/statements/current", (_req, res) => {
+  const statement = db
+    .prepare("SELECT id FROM statements ORDER BY id DESC LIMIT 1")
+    .get();
+
+  if (!statement) {
+    return res.status(204).end();
+  }
+
+  return res.json(statementResponse(statement.id));
+});
+
+app.patch("/api/transactions/bulk", (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.map(Number).filter(Boolean) : [];
+  if (!ids.length) {
+    return res.status(400).json({ error: "Choose at least one transaction." });
+  }
+
+  const categoryId =
+    req.body.manualCategoryId == null ? null : Number(req.body.manualCategoryId);
+  const reviewed = req.body.reviewed == null ? null : req.body.reviewed ? 1 : 0;
+
+  if (
+    categoryId != null &&
+    !db.prepare("SELECT id FROM categories WHERE id = ?").get(categoryId)
+  ) {
+    return res.status(400).json({ error: "Choose a valid category." });
+  }
+
+  const setParts = [];
+  const values = [];
+
+  if (categoryId !== null) {
+    setParts.push("manual_category_id = ?");
+    values.push(categoryId);
+  }
+
+  if (reviewed !== null) {
+    setParts.push("reviewed = ?");
+    values.push(reviewed);
+  }
+
+  if (!setParts.length) {
+    return res.status(400).json({ error: "Nothing to update." });
+  }
+
+  const placeholders = ids.map(() => "?").join(",");
+  values.push(...ids);
+
+  db.prepare(
+    "UPDATE statement_transactions SET " +
+      setParts.join(", ") +
+      " WHERE id IN (" +
+      placeholders +
+      ")"
+  ).run(...values);
+
+  const statement = db
+    .prepare(
+      "SELECT statement_id FROM statement_transactions WHERE id = ?"
+    )
+    .get(ids[0]);
+
+  return res.json(statement ? statementResponse(statement.statement_id) : { ok: true });
+});
+
 app.get("/api/categories", (_req, res) => {
   const categories = db
     .prepare("SELECT * FROM categories ORDER BY sort_order, name")
@@ -169,35 +235,84 @@ app.post("/api/import", upload.single("file"), (req, res) => {
 
   try {
     const rules = getRules();
-    const transactions = parseAmexCsv(req.file.buffer).map(
-      (transaction, index) => ({
-        id: index + 1,
-        ...transaction,
-        match: categorizeTransaction(transaction, rules)
-      })
+    const importedTransactions = parseAmexCsv(req.file.buffer).map(transaction => ({
+      ...transaction,
+      match: categorizeTransaction(transaction, rules)
+    }));
+
+    const insertStatement = db.prepare(
+      "INSERT INTO statements (filename, status) VALUES (?, 'in_progress')"
     );
 
-    const categorized = transactions.filter(transaction => transaction.match)
-      .length;
-
-    const total = transactions.reduce(
-      (sum, transaction) => sum + transaction.amount,
-      0
+    const insertTransaction = db.prepare(
+      "INSERT INTO statement_transactions " +
+        "(statement_id, position, data_json, match_json, manual_category_id, reviewed) " +
+        "VALUES (?, ?, ?, ?, NULL, 0)"
     );
 
-    return res.json({
-      summary: {
-        transactions: transactions.length,
-        categorized,
-        uncategorized: transactions.length - categorized,
-        total: Math.round(total * 100) / 100
-      },
-      transactions
-    });
+    const statementId = db.transaction(() => {
+      const result = insertStatement.run(req.file.originalname || "activity.csv");
+      const id = Number(result.lastInsertRowid);
+
+      importedTransactions.forEach((transaction, index) => {
+        const { match, ...data } = transaction;
+        insertTransaction.run(
+          id,
+          index,
+          JSON.stringify(data),
+          match ? JSON.stringify(match) : null
+        );
+      });
+
+      return id;
+    })();
+
+    return res.json(statementResponse(statementId));
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
 });
+
+
+function statementResponse(statementId) {
+  const statement = db
+    .prepare("SELECT * FROM statements WHERE id = ?")
+    .get(statementId);
+
+  if (!statement) return null;
+
+  const transactions = db
+    .prepare(
+      "SELECT st.*, c.name AS manual_category_name " +
+        "FROM statement_transactions st " +
+        "LEFT JOIN categories c ON c.id = st.manual_category_id " +
+        "WHERE st.statement_id = ? ORDER BY st.position"
+    )
+    .all(statementId)
+    .map(row => ({
+      id: row.id,
+      ...JSON.parse(row.data_json),
+      match: row.match_json ? JSON.parse(row.match_json) : null,
+      manualCategoryId: row.manual_category_id,
+      manualCategoryName: row.manual_category_name || null,
+      reviewed: !!row.reviewed
+    }));
+
+  const categorized = transactions.filter(transaction => transaction.match).length;
+  const total = transactions.reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0);
+
+  return {
+    statement,
+    summary: {
+      transactions: transactions.length,
+      categorized,
+      uncategorized: transactions.filter(transaction => !transaction.match).length,
+      total: Math.round(total * 100) / 100
+    },
+    transactions
+  };
+}
+
 
 function sanitizeRule(body) {
   const name = String(body.name || "").trim();
