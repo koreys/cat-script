@@ -140,13 +140,31 @@ app.get("/api/statements/:id/report.pdf", (req, res) => {
 
   doc.pipe(res);
 
-  doc.fontSize(20).font("Helvetica-Bold").text("American Express Categorization Report");
-  doc.moveDown(0.35);
+  const logoBuffer = getTwinLogoBuffer();
+
+  if (logoBuffer) {
+    doc.image(logoBuffer, 54, 44, { fit: [72, 72] });
+  }
+
+  doc
+    .fontSize(20)
+    .font("Helvetica-Bold")
+    .fillColor("#111111")
+    .text("American Express Categorization Report", 140, 57, { width: 400 });
+
   doc.fontSize(10).font("Helvetica").fillColor("#555555");
-  doc.text("Twin Building Inc.");
-  doc.text("Source: " + report.statement.filename);
-  doc.text("Imported: " + new Date(report.statement.imported_at + "Z").toLocaleString("en-US"));
-  doc.moveDown(1);
+  doc.text("Twin Building Inc.", 140, 86, { width: 400 });
+  doc.text("Source: " + report.statement.filename, 140, 101, { width: 400 });
+  doc.text(
+    "Imported: " +
+      new Date(report.statement.imported_at + "Z").toLocaleString("en-US"),
+    140,
+    116,
+    { width: 400 }
+  );
+
+  doc.x = 54;
+  doc.y = 145;
 
   doc.fillColor("#111111").fontSize(12).font("Helvetica-Bold");
   doc.text("Statement Summary");
@@ -555,6 +573,23 @@ function safeBaseName(filename) {
     .replace(/\\.csv$/i, "")
     .replace(/[^a-z0-9._-]+/gi, "-")
     .replace(/^-+|-+$/g, "") || "activity";
+}
+
+function getTwinLogoBuffer() {
+  try {
+    const logoPath = path.join(
+      __dirname,
+      "..",
+      "client",
+      "public",
+      "twin-logo.svg"
+    );
+    const svg = fs.readFileSync(logoPath, "utf8");
+    const match = svg.match(/data:image\/png;base64,([^"]+)/);
+    return match ? Buffer.from(match[1], "base64") : null;
+  } catch (_error) {
+    return null;
+  }
 }
 
 function formatMoney(value) {
