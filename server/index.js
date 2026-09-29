@@ -48,6 +48,18 @@ app.get("/api/statements", (_req, res) => {
   res.json(statements);
 });
 
+app.get("/api/statements/current", (_req, res) => {
+  const statement = db
+    .prepare("SELECT id FROM statements ORDER BY id DESC LIMIT 1")
+    .get();
+
+  if (!statement) {
+    return res.status(204).end();
+  }
+
+  return res.json(statementResponse(statement.id));
+});
+
 app.get("/api/statements/:id", (req, res) => {
   const report = statementResponse(Number(req.params.id));
 
@@ -210,18 +222,6 @@ app.get("/api/statements/:id/report.pdf", (req, res) => {
   doc.text(formatMoney(report.summary.total), startX + widths[0] + widths[1], y, { width: widths[2], align: "right" });
 
   doc.end();
-});
-
-app.get("/api/statements/current", (_req, res) => {
-  const statement = db
-    .prepare("SELECT id FROM statements ORDER BY id DESC LIMIT 1")
-    .get();
-
-  if (!statement) {
-    return res.status(204).end();
-  }
-
-  return res.json(statementResponse(statement.id));
 });
 
 app.patch("/api/transactions/bulk", (req, res) => {
