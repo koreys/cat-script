@@ -527,7 +527,7 @@ function clearSelection() {
   bulkCategoryId.value = "";
 }
 
-async function applyBulkCategory() {
+async function applyBulkCategory(markReviewed = false) {
   const categoryId = Number(bulkCategoryId.value);
   const ids = selectedTransactionIds.value;
 
@@ -538,6 +538,7 @@ async function applyBulkCategory() {
 
   for (const id of ids) {
     manualCategories[id] = categoryId;
+    if (markReviewed) reviewedTransactions[id] = true;
   }
 
   try {
@@ -546,7 +547,8 @@ async function applyBulkCategory() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ids,
-        manualCategoryId: categoryId
+        manualCategoryId: categoryId,
+        reviewed: markReviewed ? true : undefined
       })
     });
 
@@ -559,7 +561,7 @@ async function applyBulkCategory() {
       (count === 1 ? "" : "s") +
       " categorized as " +
       categoryName +
-      ".";
+      (markReviewed ? " and marked reviewed." : ".");
   } catch (err) {
     error.value = err.message;
   }
@@ -789,11 +791,19 @@ function downloadStatement(format) {
               </select>
 
               <button
-                class="primary"
+                class="secondary"
                 :disabled="!bulkCategoryId"
-                @click="applyBulkCategory"
+                @click="applyBulkCategory(false)"
               >
                 Apply category
+              </button>
+
+              <button
+                class="primary"
+                :disabled="!bulkCategoryId"
+                @click="applyBulkCategory(true)"
+              >
+                Apply category &amp; mark reviewed
               </button>
 
               <button class="ghost" @click="clearSelection">
