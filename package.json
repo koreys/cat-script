@@ -2,13 +2,16 @@
   "name": "cat-script",
   "version": "0.1.0",
   "description": "Browser-based American Express transaction categorizer",
-  "main": "server/index.js",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently \"node --watch server/index.js\" \"npm --prefix client run dev\"",
     "start": "node server/index.js",
     "build": "npm --prefix client run build",
     "install:client": "npm --prefix client install",
-    "cli": "node index.js"
+    "cli": "node index.js",
+    "electron:prepare-icon": "mkdir -p build && sips -z 1024 1024 client/public/twin-logo.png --out build/icon.png >/dev/null",
+    "electron:build": "npm run build && npm run electron:prepare-icon && electron-builder --mac dir",
+    "electron:dmg": "npm run build && npm run electron:prepare-icon && electron-builder --mac dmg"
   },
   "bin": {
     "amexcat": "index.js"
@@ -34,6 +37,44 @@
     "pdfkit": "^0.20.2"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.twininc.catscript",
+    "productName": "Cat Script",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "server/**/*",
+      "client/dist/**/*",
+      "client/public/twin-logo.png",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "title": "Cat Script"
+    },
+    "npmRebuild": true
   }
 }
