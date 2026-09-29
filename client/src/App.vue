@@ -1386,8 +1386,8 @@ button {
 }
 
 .topbar {
-  background: #101827;
-  color: white;
+  background: #dbeafe;
+  color: #172033;
   padding: 28px 36px 0;
   display: flex;
   align-items: flex-end;
@@ -1399,6 +1399,7 @@ button {
   display: flex;
   align-items: center;
   gap: 18px;
+  padding-bottom: 12px;
 }
 
 .brand-logo {
@@ -1416,14 +1417,14 @@ button {
 
 .topbar p {
   margin: 0 0 24px;
-  color: #aeb8c7;
+  color: #475569;
 }
 
 .eyebrow {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: #7f8da3;
+  color: #64748b;
 }
 
 .tabs {
@@ -1434,7 +1435,7 @@ button {
 .tabs button {
   border: 0;
   background: transparent;
-  color: #aeb8c7;
+  color: #475569;
   padding: 14px 18px;
   border-radius: 10px 10px 0 0;
 }
