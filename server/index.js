@@ -15,7 +15,7 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }
 });
 
-const PORT = process.env.PORT || 3000;
+const DEFAULT_PORT = Number(process.env.PORT || 3000);
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
@@ -667,6 +667,29 @@ if (fs.existsSync(clientDist)) {
   });
 }
 
-app.listen(PORT, () => {
-  console.log("Cat Script web app running at http://localhost:" + PORT);
-});
+function startServer(port = DEFAULT_PORT) {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(port, "127.0.0.1", () => {
+      const address = server.address();
+      const actualPort =
+        typeof address === "object" && address ? address.port : port;
+
+      console.log(
+        "Cat Script web app running at http://127.0.0.1:" + actualPort
+      );
+
+      resolve({ server, port: actualPort });
+    });
+
+    server.once("error", reject);
+  });
+}
+
+if (require.main === module) {
+  startServer().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { app, startServer };
