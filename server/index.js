@@ -24,6 +24,40 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/statements", (_req, res) => {
+  const statements = db
+    .prepare("SELECT * FROM statements ORDER BY id DESC")
+    .all()
+    .map(statement => {
+      const report = statementResponse(statement.id);
+      const needReview = report.transactions.filter(
+        transaction =>
+          !transaction.match &&
+          !(transaction.manualCategoryId && transaction.reviewed)
+      ).length;
+
+      return {
+        ...statement,
+        transactions: report.summary.transactions,
+        total: report.summary.total,
+        needReview,
+        completed: needReview === 0
+      };
+    });
+
+  res.json(statements);
+});
+
+app.get("/api/statements/:id", (req, res) => {
+  const report = statementResponse(Number(req.params.id));
+
+  if (!report) {
+    return res.status(404).json({ error: "Statement not found." });
+  }
+
+  return res.json(report);
+});
+
 app.get("/api/statements/:id/export.csv", (req, res) => {
   const report = statementResponse(Number(req.params.id));
   if (!report) {
