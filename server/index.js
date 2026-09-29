@@ -582,11 +582,9 @@ function getTwinLogoBuffer() {
       "..",
       "client",
       "public",
-      "twin-logo.svg"
+      "twin-logo.png"
     );
-    const svg = fs.readFileSync(logoPath, "utf8");
-    const match = svg.match(/data:image\/png;base64,([^"]+)/);
-    return match ? Buffer.from(match[1], "base64") : null;
+    return fs.readFileSync(logoPath);
   } catch (_error) {
     return null;
   }
