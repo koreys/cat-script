@@ -1,0 +1,2094 @@
+<script setup>
+import { computed, onMounted, reactive, ref } from "vue";
+
+const activeTab = ref("import");
+const categories = ref([]);
+const rules = ref([]);
+const transactions = ref([]);
+const summary = ref(null);
+const selectedFile = ref(null);
+const loading = ref(false);
+const error = ref("");
+const success = ref("");
+const showOnlyUncategorized = ref(true);
+const manualCategories = reactive({});
+const reviewedTransactions = reactive({});
+const ruleModalOpen = ref(false);
+const ruleModalTransactionId = ref(null);
+const currentStatement = ref(null);
+const selectedTransactions = reactive({});
+const bulkCategoryId = ref("");
+const statementHistory = ref([]);
+const historyLoading = ref(false);
+
+const fields = [
+  ["description", "Description"],
+  ["cardMember", "Card Member"],
+  ["amexCategory", "AmEx Category"],
+  ["amount", "Amount"],
+  ["statementDescription", "Statement Description"],
+  ["cityState", "City / State"],
+  ["country", "Country"]
+];
+
+const operators = [
+  ["equals", "equals"],
+  ["contains", "contains"],
+  ["containsAny", "contains any"],
+  ["startsWith", "starts with"],
+  ["gt", "greater than"],
+  ["gte", "greater than or equal"],
+  ["lt", "less than"],
+  ["lte", "less than or equal"]
+];
+
+function newRule() {
+  return {
+    id: null,
+    name: "",
+    categoryId: "",
+    priority: 100,
+    matchMode: "all",
+    active: true,
+    conditions: [
+      { field: "description", operator: "contains", value: "" }
+    ]
+  };
+}
+
+const ruleDraft = reactive(newRule());
+const categoryDraft = ref("");
+
+const groupedRows = computed(() => {
+  const rows = [];
+  const groups = new Map();
+
+  for (const transaction of transactions.value) {
+    if (transaction.match) {
+      rows.push({
+        ...transaction,
+        transactionIds: [transaction.id],
+        transactionCount: 1,
+        grouped: false
+      });
+      continue;
+    }
+
+    const key = String(transaction.description || "").trim().toUpperCase();
+
+    if (!groups.has(key)) {
+      const row = {
+        ...transaction,
+        transactionIds: [transaction.id],
+        transactionCount: 1,
+        grouped: false,
+        amount: Number(transaction.amount || 0),
+        cardMembers: new Set([transaction.cardMember]),
+        amexCategories: new Set([transaction.amexCategory]),
+        dates: new Set([transaction.date])
+      };
+      groups.set(key, row);
+      rows.push(row);
+      continue;
+    }
+
+    const row = groups.get(key);
+    row.transactionIds.push(transaction.id);
+    row.transactionCount += 1;
+    row.grouped = true;
+    row.amount += Number(transaction.amount || 0);
+    row.cardMembers.add(transaction.cardMember);
+    row.amexCategories.add(transaction.amexCategory);
+    row.dates.add(transaction.date);
+  }
+
+  return rows.map(row => {
+    if (!row.cardMembers) return row;
+
+    return {
+      ...row,
+      cardMember:
+        row.cardMembers.size === 1
+          ? [...row.cardMembers][0]
+          : "Multiple card members",
+      amexCategory:
+        row.amexCategories.size === 1
+          ? [...row.amexCategories][0]
+          : "Multiple AmEx categories",
+      date:
+        row.dates.size === 1 ? [...row.dates][0] : row.dates.size + " dates"
+    };
+  });
+});
+
+const visibleTransactions = computed(() => {
+  if (!showOnlyUncategorized.value) return groupedRows.value;
+  return groupedRows.value.filter(transaction => !transaction.match);
+});
+
+const selectableVisibleRows = computed(() =>
+  visibleTransactions.value.filter(transaction => !transaction.match)
+);
+
+const selectedTransactionIds = computed(() => {
+  const ids = [];
+
+  for (const transaction of selectableVisibleRows.value) {
+    for (const id of transaction.transactionIds || [transaction.id]) {
+      if (selectedTransactions[id]) ids.push(id);
+    }
+  }
+
+  return [...new Set(ids)];
+});
+
+const selectedRowCount = computed(() =>
+  selectableVisibleRows.value.filter(transaction => rowSelected(transaction)).length
+);
+
+const allVisibleSelected = computed(() =>
+  selectableVisibleRows.value.length > 0 &&
+  selectableVisibleRows.value.every(transaction => rowSelected(transaction))
+);
+
+const autoCategorized = computed(() =>
+  transactions.value.filter(transaction => transaction.match).length
+);
+
+const needReviewCount = computed(() =>
+  transactions.value.filter(
+    transaction => !transaction.match && !reviewedTransactions[transaction.id]
+  ).length
+);
+
+const formattedTotal = computed(() =>
+  summary.value
+    ? new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD"
+      }).format(summary.value.total)
+    : "$0.00"
+);
+
+const categoryTotals = computed(() => {
+  const totals = new Map();
+
+  for (const transaction of transactions.value) {
+    const categoryName =
+      transaction.match?.categoryName ||
+      categoryNameById(manualCategories[transaction.id]);
+
+    if (!categoryName) continue;
+
+    const current = totals.get(categoryName) || {
+      category: categoryName,
+      count: 0,
+      amount: 0
+    };
+
+    current.count += 1;
+    current.amount += Number(transaction.amount || 0);
+    totals.set(categoryName, current);
+  }
+
+  return [...totals.values()].sort((a, b) =>
+    a.category.localeCompare(b.category)
+  );
+});
+
+onMounted(async () => {
+  await refreshSettings();
+  await loadCurrentStatement();
+  await loadStatementHistory();
+});
+
+async function api(url, options = {}) {
+  const response = await fetch(url, options);
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || "Request failed.");
+  }
+
+  if (response.status === 204) return null;
+  return response.json();
+}
+
+function applyStatement(result) {
+  if (!result) return;
+
+  currentStatement.value = result.statement || null;
+  summary.value = result.summary;
+  transactions.value = result.transactions || [];
+
+  for (const key of Object.keys(manualCategories)) {
+    delete manualCategories[key];
+  }
+
+  for (const key of Object.keys(reviewedTransactions)) {
+    delete reviewedTransactions[key];
+  }
+
+  for (const key of Object.keys(selectedTransactions)) {
+    delete selectedTransactions[key];
+  }
+  bulkCategoryId.value = "";
+
+  for (const transaction of transactions.value) {
+    if (transaction.manualCategoryId) {
+      manualCategories[transaction.id] = Number(transaction.manualCategoryId);
+    }
+    if (transaction.reviewed) {
+      reviewedTransactions[transaction.id] = true;
+    }
+  }
+}
+
+async function loadStatementHistory() {
+  historyLoading.value = true;
+  try {
+    statementHistory.value = await api("/api/statements");
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+async function openStatement(statementId) {
+  error.value = "";
+  success.value = "";
+
+  try {
+    const result = await api("/api/statements/" + statementId);
+    applyStatement(result);
+    activeTab.value = "import";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+function formatHistoryDate(value) {
+  if (!value) return "";
+  const date = new Date(value + "Z");
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD"
+  }).format(Number(value || 0));
+}
+
+async function loadCurrentStatement() {
+  try {
+    const response = await fetch("/api/statements/current");
+    if (response.status === 204) return;
+    if (!response.ok) throw new Error("Could not load the current statement.");
+    applyStatement(await response.json());
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+async function refreshSettings() {
+  error.value = "";
+  try {
+    const [cats, ruleList] = await Promise.all([
+      api("/api/categories"),
+      api("/api/rules")
+    ]);
+    categories.value = cats;
+    rules.value = ruleList;
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+function handleFile(event) {
+  selectedFile.value = event.target.files?.[0] || null;
+}
+
+async function importCsv() {
+  if (!selectedFile.value) {
+    error.value = "Choose an AmEx CSV file first.";
+    return;
+  }
+
+  loading.value = true;
+  error.value = "";
+  success.value = "";
+
+  try {
+    const formData = new FormData();
+    formData.append("file", selectedFile.value);
+
+    const result = await api("/api/import", {
+      method: "POST",
+      body: formData
+    });
+
+    applyStatement(result);
+
+    ruleModalOpen.value = false;
+    ruleModalTransactionId.value = null;
+    success.value = "Import complete.";
+    await loadStatementHistory();
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function addCategory() {
+  const name = categoryDraft.value.trim();
+  if (!name) return;
+
+  error.value = "";
+  success.value = "";
+
+  try {
+    await api("/api/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+
+    categoryDraft.value = "";
+    await refreshSettings();
+    success.value = "Category added.";
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+async function updateCategory(category) {
+  error.value = "";
+  success.value = "";
+
+  try {
+    await api("/api/categories/" + category.id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: category.name,
+        active: !!category.active
+      })
+    });
+
+    success.value = "Category updated.";
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+function resetRuleDraft() {
+  Object.assign(ruleDraft, newRule());
+}
+
+function editRule(rule) {
+  Object.assign(ruleDraft, {
+    id: rule.id,
+    name: rule.name,
+    categoryId: rule.category_id,
+    priority: rule.priority,
+    matchMode: rule.match_mode,
+    active: !!rule.active,
+    conditions: JSON.parse(JSON.stringify(rule.conditions || []))
+  });
+
+  activeTab.value = "rules";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function addCondition() {
+  ruleDraft.conditions.push({
+    field: "description",
+    operator: "contains",
+    value: ""
+  });
+}
+
+function removeCondition(index) {
+  if (ruleDraft.conditions.length === 1) return;
+  ruleDraft.conditions.splice(index, 1);
+}
+
+function serializeCondition(condition) {
+  if (condition.operator === "containsAny") {
+    const values = Array.isArray(condition.value)
+      ? condition.value
+      : String(condition.value || "")
+          .split("\n")
+          .map(value => value.trim())
+          .filter(Boolean);
+
+    return { ...condition, value: values };
+  }
+
+  if (["gt", "gte", "lt", "lte"].includes(condition.operator)) {
+    return { ...condition, value: Number(condition.value) };
+  }
+
+  return { ...condition };
+}
+
+function editValue(condition) {
+  if (condition.operator === "containsAny" && Array.isArray(condition.value)) {
+    return condition.value.join("\n");
+  }
+  return condition.value;
+}
+
+function setConditionValue(condition, value) {
+  condition.value = value;
+}
+
+async function saveRule() {
+  error.value = "";
+  success.value = "";
+
+  const payload = {
+    name: ruleDraft.name,
+    categoryId: Number(ruleDraft.categoryId),
+    priority: Number(ruleDraft.priority),
+    matchMode: ruleDraft.matchMode,
+    active: ruleDraft.active,
+    conditions: ruleDraft.conditions.map(serializeCondition)
+  };
+
+  try {
+    if (ruleDraft.id) {
+      await api("/api/rules/" + ruleDraft.id, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      success.value = "Rule updated.";
+    } else {
+      await api("/api/rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      success.value = "Rule added.";
+    }
+
+    const wasModalRule = ruleModalOpen.value;
+    resetRuleDraft();
+    await refreshSettings();
+
+    if (wasModalRule) {
+      ruleModalOpen.value = false;
+      ruleModalTransactionId.value = null;
+    }
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+async function deleteRule(rule) {
+  if (!confirm('Delete rule "' + rule.name + '"?')) return;
+
+  error.value = "";
+  success.value = "";
+
+  try {
+    await api("/api/rules/" + rule.id, {
+      method: "DELETE"
+    });
+    await refreshSettings();
+
+    if (ruleDraft.id === rule.id) {
+      resetRuleDraft();
+    }
+
+    success.value = "Rule deleted.";
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+async function chooseManualCategory(transaction, categoryId) {
+  const value = Number(categoryId);
+  const ids = transaction.transactionIds || [transaction.id];
+
+  for (const transactionId of ids) {
+    manualCategories[transactionId] = value;
+  }
+
+  try {
+    await api("/api/transactions/bulk", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ids,
+        manualCategoryId: value
+      })
+    });
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+function rowManualCategory(transaction) {
+  const ids = transaction.transactionIds || [transaction.id];
+  return manualCategories[ids[0]] || "";
+}
+
+function rowReviewed(transaction) {
+  const ids = transaction.transactionIds || [transaction.id];
+  return ids.every(id => reviewedTransactions[id]);
+}
+
+function rowSelected(transaction) {
+  const ids = transaction.transactionIds || [transaction.id];
+  return ids.every(id => selectedTransactions[id]);
+}
+
+function toggleRowSelection(transaction, checked) {
+  for (const id of transaction.transactionIds || [transaction.id]) {
+    if (checked) selectedTransactions[id] = true;
+    else delete selectedTransactions[id];
+  }
+}
+
+function toggleSelectAllVisible(checked) {
+  for (const transaction of selectableVisibleRows.value) {
+    toggleRowSelection(transaction, checked);
+  }
+}
+
+function clearSelection() {
+  for (const key of Object.keys(selectedTransactions)) {
+    delete selectedTransactions[key];
+  }
+  bulkCategoryId.value = "";
+}
+
+async function applyBulkCategory(markReviewed = false) {
+  const categoryId = Number(bulkCategoryId.value);
+  const ids = selectedTransactionIds.value;
+
+  if (!categoryId || !ids.length) return;
+
+  error.value = "";
+  success.value = "";
+
+  for (const id of ids) {
+    manualCategories[id] = categoryId;
+    if (markReviewed) reviewedTransactions[id] = true;
+  }
+
+  try {
+    await api("/api/transactions/bulk", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ids,
+        manualCategoryId: categoryId,
+        reviewed: markReviewed ? true : undefined
+      })
+    });
+
+    const categoryName = categoryNameById(categoryId);
+    const count = ids.length;
+    clearSelection();
+    success.value =
+      count +
+      " transaction" +
+      (count === 1 ? "" : "s") +
+      " categorized as " +
+      categoryName +
+      (markReviewed ? " and marked reviewed." : ".");
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+function categoryNameById(id) {
+  return categories.value.find(category => category.id === Number(id))?.name || "";
+}
+
+function transactionCategory(transaction) {
+  if (manualCategories[transaction.id]) {
+    return categoryNameById(manualCategories[transaction.id]);
+  }
+  return transaction.match?.categoryName || "";
+}
+
+function suggestedRuleFromTransaction(transaction) {
+  const categoryId = rowManualCategory(transaction);
+  if (!categoryId) return;
+
+  Object.assign(ruleDraft, {
+    id: null,
+    name: transaction.description,
+    categoryId,
+    priority: 100,
+    matchMode: "all",
+    active: true,
+    conditions: [
+      {
+        field: "description",
+        operator: "contains",
+        value: transaction.description
+      }
+    ]
+  });
+
+  ruleModalTransactionId.value = transaction.transactionIds?.[0] || transaction.id;
+  ruleModalOpen.value = true;
+}
+
+function closeRuleModal() {
+  ruleModalOpen.value = false;
+  ruleModalTransactionId.value = null;
+  resetRuleDraft();
+}
+
+async function markReviewed(transaction) {
+  if (!transaction.match && !rowManualCategory(transaction)) return;
+
+  const ids = transaction.transactionIds || [transaction.id];
+
+  for (const transactionId of ids) {
+    reviewedTransactions[transactionId] = true;
+  }
+
+  try {
+    await api("/api/transactions/bulk", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ids,
+        reviewed: true
+      })
+    });
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+async function undoReviewed(transaction) {
+  const ids = transaction.transactionIds || [transaction.id];
+
+  for (const transactionId of ids) {
+    delete reviewedTransactions[transactionId];
+  }
+
+  try {
+    await api("/api/transactions/bulk", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ids,
+        reviewed: false
+      })
+    });
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+function downloadStatement(format) {
+  if (!currentStatement.value?.id) return;
+
+  const endpoint =
+    format === "pdf"
+      ? "/api/statements/" + currentStatement.value.id + "/report.pdf"
+      : "/api/statements/" + currentStatement.value.id + "/export.csv";
+
+  window.location.href = endpoint;
+}
+</script>
+
+<template>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <img src="/twin-logo.png" alt="Twin Inc. logo" class="brand-logo" />
+        <div>
+          <div class="eyebrow">Twin Building Inc.</div>
+          <h1>Cat Script</h1>
+          <p>American Express transaction categorizer</p>
+        </div>
+      </div>
+
+      <nav class="tabs">
+        <button :class="{ active: activeTab === 'import' }" @click="activeTab = 'import'">
+          Categorize
+        </button>
+        <button :class="{ active: activeTab === 'rules' }" @click="activeTab = 'rules'">
+          Rules
+        </button>
+        <button :class="{ active: activeTab === 'categories' }" @click="activeTab = 'categories'">
+          Categories
+        </button>
+        <button
+          :class="{ active: activeTab === 'history' }"
+          @click="activeTab = 'history'; loadStatementHistory()"
+        >
+          History
+        </button>
+      </nav>
+    </header>
+
+    <main>
+      <div v-if="error" class="notice error">{{ error }}</div>
+      <div v-if="success" class="notice success">{{ success }}</div>
+
+      <section v-if="activeTab === 'import'" class="panel stack">
+        <div class="section-header">
+          <div>
+            <h2>Monthly statement</h2>
+            <p>
+              <template v-if="currentStatement">
+                Working on {{ currentStatement.filename }} · progress saves automatically.
+              </template>
+              <template v-else>
+                Upload the AmEx CSV and let the rules do the first pass.
+              </template>
+            </p>
+          </div>
+        </div>
+
+        <div class="upload-card">
+          <input type="file" accept=".csv,text/csv" @change="handleFile" />
+          <button class="primary" :disabled="loading || !selectedFile" @click="importCsv">
+            {{ loading ? "Importing..." : "Import CSV" }}
+          </button>
+        </div>
+
+        <div v-if="summary" class="summary-grid">
+          <article>
+            <span>Total transactions</span>
+            <strong>{{ summary.transactions }}</strong>
+          </article>
+          <article>
+            <span>Auto-categorized</span>
+            <strong>{{ autoCategorized }}</strong>
+          </article>
+          <article>
+            <span>Need review</span>
+            <strong>{{ needReviewCount }}</strong>
+          </article>
+          <article>
+            <span>Statement total</span>
+            <strong>{{ formattedTotal }}</strong>
+          </article>
+        </div>
+
+        <div
+          v-if="summary && needReviewCount === 0 && transactions.length"
+          class="completion-card"
+        >
+          <div class="completion-header">
+            <div>
+              <div class="completion-title">✓ Statement review complete</div>
+              <p>Every transaction has been categorized and reviewed.</p>
+            </div>
+
+            <div class="export-actions">
+              <button class="secondary" @click="downloadStatement('csv')">
+                Export CSV
+              </button>
+              <button class="primary" @click="downloadStatement('pdf')">
+                Download PDF
+              </button>
+            </div>
+          </div>
+
+          <div class="completion-table">
+            <div
+              v-for="item in categoryTotals"
+              :key="item.category"
+              class="completion-row"
+            >
+              <span>{{ item.category }}</span>
+              <span>{{ item.count }} transactions</span>
+              <strong>
+                {{
+                  new Intl.NumberFormat("en-US", {
+                    style: "currency",
+                    currency: "USD"
+                  }).format(item.amount)
+                }}
+              </strong>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="transactions.length" class="table-card">
+          <div v-if="selectedRowCount" class="bulk-bar">
+            <strong>
+              {{ selectedRowCount }} row{{ selectedRowCount === 1 ? "" : "s" }} selected
+              · {{ selectedTransactionIds.length }} transaction{{ selectedTransactionIds.length === 1 ? "" : "s" }}
+            </strong>
+
+            <div class="bulk-actions">
+              <select v-model="bulkCategoryId">
+                <option value="">Choose category…</option>
+                <option
+                  v-for="category in categories.filter(category => category.active)"
+                  :key="category.id"
+                  :value="category.id"
+                >
+                  {{ category.name }}
+                </option>
+              </select>
+
+              <button
+                class="secondary"
+                :disabled="!bulkCategoryId"
+                @click="applyBulkCategory(false)"
+              >
+                Apply category
+              </button>
+
+              <button
+                class="primary"
+                :disabled="!bulkCategoryId"
+                @click="applyBulkCategory(true)"
+              >
+                Apply category &amp; mark reviewed
+              </button>
+
+              <button class="ghost" @click="clearSelection">
+                Clear
+              </button>
+            </div>
+          </div>
+
+          <div class="table-toolbar">
+            <label class="checkbox-row">
+              <input v-model="showOnlyUncategorized" type="checkbox" />
+              Show only transactions needing review
+            </label>
+            <span>
+              {{ visibleTransactions.length }} rows ·
+              {{
+                visibleTransactions.reduce(
+                  (sum, transaction) => sum + (transaction.transactionCount || 1),
+                  0
+                )
+              }}
+              transactions
+            </span>
+          </div>
+
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th class="select-column">
+                    <input
+                      type="checkbox"
+                      :checked="allVisibleSelected"
+                      :disabled="!selectableVisibleRows.length"
+                      aria-label="Select all visible rows"
+                      @change="toggleSelectAllVisible($event.target.checked)"
+                    />
+                  </th>
+                  <th>Date</th>
+                  <th>Description</th>
+                  <th>Card Member</th>
+                  <th class="money">Amount</th>
+                  <th>AmEx Category</th>
+                  <th>Category</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                    v-for="transaction in visibleTransactions"
+                    :key="transaction.id"
+                    :class="{ reviewed: rowReviewed(transaction) }"
+                  >
+                  <td class="select-column">
+                    <input
+                      v-if="!transaction.match"
+                      type="checkbox"
+                      :checked="rowSelected(transaction)"
+                      aria-label="Select transaction row"
+                      @change="toggleRowSelection(transaction, $event.target.checked)"
+                    />
+                  </td>
+                  <td>{{ transaction.date }}</td>
+                  <td>
+                    <div class="merchant-line">
+                      <div class="merchant">{{ transaction.description }}</div>
+                      <span
+                        v-if="transaction.transactionCount > 1"
+                        class="group-badge"
+                      >
+                        {{ transaction.transactionCount }} transactions
+                      </span>
+                    </div>
+                    <div
+                      v-if="transaction.transactionCount > 1"
+                      class="group-note"
+                    >
+                      Combined amount for matching descriptions
+                    </div>
+                    <div v-if="transaction.match" class="rule-hit">
+                      Rule: {{ transaction.match.ruleName }}
+                    </div>
+                  </td>
+                  <td>{{ transaction.cardMember }}</td>
+                  <td class="money">
+                    {{
+                      new Intl.NumberFormat("en-US", {
+                        style: "currency",
+                        currency: "USD"
+                      }).format(transaction.amount)
+                    }}
+                  </td>
+                  <td>{{ transaction.amexCategory }}</td>
+                  <td>
+                    <span v-if="transaction.match" class="pill matched">
+                      {{ transaction.match.categoryName }}
+                    </span>
+
+                    <select
+                      v-else
+                      :value="rowManualCategory(transaction)"
+                      @change="chooseManualCategory(transaction, $event.target.value)"
+                    >
+                      <option value="">Choose category…</option>
+                      <option
+                        v-for="category in categories.filter(category => category.active)"
+                        :key="category.id"
+                        :value="category.id"
+                      >
+                        {{ category.name }}
+                      </option>
+                    </select>
+                  </td>
+                  <td>
+                    <div
+                      v-if="!transaction.match && rowManualCategory(transaction)"
+                      class="row-actions"
+                    >
+                      <button
+                        class="small secondary"
+                        @click="suggestedRuleFromTransaction(transaction)"
+                      >
+                        Create rule
+                      </button>
+
+                      <button
+                        v-if="!rowReviewed(transaction)"
+                        class="small review-button"
+                        @click="markReviewed(transaction)"
+                      >
+                        ✓ Reviewed
+                      </button>
+
+                      <button
+                        v-else
+                        class="small ghost"
+                        @click="undoReviewed(transaction)"
+                      >
+                        Undo
+                      </button>
+                    </div>
+
+                    <span
+                      v-else-if="!transaction.match && rowReviewed(transaction)"
+                      class="pill matched"
+                    >
+                      Reviewed
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section v-else-if="activeTab === 'rules'" class="rules-layout">
+        <div class="panel">
+          <div class="section-header">
+            <div>
+              <h2>{{ ruleDraft.id ? "Edit rule" : "New rule" }}</h2>
+              <p>Build the rule from conditions instead of editing JavaScript.</p>
+            </div>
+          </div>
+
+          <div class="form-grid two">
+            <label>
+              <span>Rule name</span>
+              <input v-model="ruleDraft.name" type="text" placeholder="Example: Jersey Mike's" />
+            </label>
+
+            <label>
+              <span>Category</span>
+              <select v-model="ruleDraft.categoryId">
+                <option value="">Choose category…</option>
+                <option
+                  v-for="category in categories.filter(category => category.active)"
+                  :key="category.id"
+                  :value="category.id"
+                >
+                  {{ category.name }}
+                </option>
+              </select>
+            </label>
+
+            <label>
+              <span>Priority</span>
+              <input v-model.number="ruleDraft.priority" type="number" min="1" />
+            </label>
+
+            <label>
+              <span>Match</span>
+              <select v-model="ruleDraft.matchMode">
+                <option value="all">ALL conditions</option>
+                <option value="any">ANY condition</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="conditions">
+            <div
+              v-for="(condition, index) in ruleDraft.conditions"
+              :key="index"
+              class="condition-row"
+            >
+              <select v-model="condition.field">
+                <option v-for="[value, label] in fields" :key="value" :value="value">
+                  {{ label }}
+                </option>
+              </select>
+
+              <select v-model="condition.operator">
+                <option v-for="[value, label] in operators" :key="value" :value="value">
+                  {{ label }}
+                </option>
+              </select>
+
+              <textarea
+                v-if="condition.operator === 'containsAny'"
+                rows="4"
+                :value="editValue(condition)"
+                placeholder="One value per line"
+                @input="setConditionValue(condition, $event.target.value)"
+              />
+
+              <input
+                v-else
+                :type="['gt','gte','lt','lte'].includes(condition.operator) ? 'number' : 'text'"
+                :value="editValue(condition)"
+                @input="setConditionValue(condition, $event.target.value)"
+              />
+
+              <button class="icon-button" @click="removeCondition(index)">×</button>
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button class="secondary" @click="addCondition">Add condition</button>
+            <button class="primary" @click="saveRule">
+              {{ ruleDraft.id ? "Save changes" : "Add rule" }}
+            </button>
+            <button v-if="ruleDraft.id" class="ghost" @click="resetRuleDraft">
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="section-header">
+            <div>
+              <h2>Rules</h2>
+              <p>Lower priority numbers run first.</p>
+            </div>
+          </div>
+
+          <div class="rule-list">
+            <article v-for="rule in rules" :key="rule.id" class="rule-card">
+              <div class="rule-card-main">
+                <div class="rule-title-row">
+                  <strong>{{ rule.name }}</strong>
+                  <span class="priority">#{{ rule.priority }}</span>
+                  <span v-if="!rule.active" class="pill inactive">Inactive</span>
+                </div>
+                <div class="rule-category">→ {{ rule.category_name }}</div>
+                <ul>
+                  <li v-for="(condition, index) in rule.conditions" :key="index">
+                    {{ condition.field }} {{ condition.operator }}
+                    <template v-if="Array.isArray(condition.value)">
+                      {{ condition.value.join(", ") }}
+                    </template>
+                    <template v-else>{{ condition.value }}</template>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="rule-actions">
+                <button class="small secondary" @click="editRule(rule)">Edit</button>
+                <button class="small danger" @click="deleteRule(rule)">Delete</button>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section v-else-if="activeTab === 'categories'" class="panel">
+        <div class="section-header">
+          <div>
+            <h2>Categories</h2>
+            <p>Edit the categories available during monthly review.</p>
+          </div>
+        </div>
+
+        <div class="add-category">
+          <input
+            v-model="categoryDraft"
+            type="text"
+            placeholder="New category name"
+            @keyup.enter="addCategory"
+          />
+          <button class="primary" @click="addCategory">Add category</button>
+        </div>
+
+        <div class="category-list">
+          <div v-for="category in categories" :key="category.id" class="category-row">
+            <input v-model="category.name" type="text" />
+            <label class="checkbox-row">
+              <input v-model="category.active" :true-value="1" :false-value="0" type="checkbox" />
+              Active
+            </label>
+            <button class="secondary" @click="updateCategory(category)">Save</button>
+          </div>
+        </div>
+      </section>
+
+      <section v-else class="panel">
+        <div class="section-header history-header">
+          <div>
+            <h2>Statement history</h2>
+            <p>Open any prior import and continue reviewing or download its report.</p>
+          </div>
+
+          <button class="secondary" @click="loadStatementHistory">
+            Refresh
+          </button>
+        </div>
+
+        <div v-if="historyLoading" class="history-empty">
+          Loading statement history…
+        </div>
+
+        <div v-else-if="!statementHistory.length" class="history-empty">
+          No saved statements yet.
+        </div>
+
+        <div v-else class="history-list">
+          <article
+            v-for="statement in statementHistory"
+            :key="statement.id"
+            class="history-card"
+            :class="{ current: currentStatement?.id === statement.id }"
+          >
+            <div class="history-main">
+              <div class="history-title-row">
+                <strong>{{ statement.filename }}</strong>
+                <span
+                  class="pill"
+                  :class="statement.completed ? 'matched' : 'inactive'"
+                >
+                  {{ statement.completed ? "Completed" : "In progress" }}
+                </span>
+                <span
+                  v-if="currentStatement?.id === statement.id"
+                  class="pill current-pill"
+                >
+                  Open now
+                </span>
+              </div>
+
+              <div class="history-meta">
+                Imported {{ formatHistoryDate(statement.imported_at) }}
+              </div>
+
+              <div class="history-stats">
+                <span>{{ statement.transactions }} transactions</span>
+                <span>{{ formatCurrency(statement.total) }}</span>
+                <span v-if="statement.needReview">
+                  {{ statement.needReview }} need review
+                </span>
+                <span v-else>Review complete</span>
+              </div>
+            </div>
+
+            <div class="history-actions">
+              <button class="primary" @click="openStatement(statement.id)">
+                Open
+              </button>
+
+              <template v-if="statement.completed">
+                <button
+                  class="secondary"
+                  @click="window.location.href = '/api/statements/' + statement.id + '/export.csv'"
+                >
+                  CSV
+                </button>
+                <button
+                  class="secondary"
+                  @click="window.location.href = '/api/statements/' + statement.id + '/report.pdf'"
+                >
+                  PDF
+                </button>
+              </template>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <div v-if="ruleModalOpen" class="modal-backdrop" @click.self="closeRuleModal">
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="rule-modal-title">
+        <div class="modal-header">
+          <div>
+            <div class="eyebrow modal-eyebrow">Create categorization rule</div>
+            <h2 id="rule-modal-title">New rule</h2>
+          </div>
+          <button class="icon-button" aria-label="Close" @click="closeRuleModal">×</button>
+        </div>
+
+        <div class="form-grid two">
+          <label>
+            <span>Rule name</span>
+            <input v-model="ruleDraft.name" type="text" />
+          </label>
+
+          <label>
+            <span>Category</span>
+            <select v-model="ruleDraft.categoryId">
+              <option value="">Choose category…</option>
+              <option
+                v-for="category in categories.filter(category => category.active)"
+                :key="category.id"
+                :value="category.id"
+              >
+                {{ category.name }}
+              </option>
+            </select>
+          </label>
+
+          <label>
+            <span>Priority</span>
+            <input v-model.number="ruleDraft.priority" type="number" min="1" />
+          </label>
+
+          <label>
+            <span>Match</span>
+            <select v-model="ruleDraft.matchMode">
+              <option value="all">ALL conditions</option>
+              <option value="any">ANY condition</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="conditions">
+          <div
+            v-for="(condition, index) in ruleDraft.conditions"
+            :key="index"
+            class="condition-row"
+          >
+            <select v-model="condition.field">
+              <option v-for="[value, label] in fields" :key="value" :value="value">
+                {{ label }}
+              </option>
+            </select>
+
+            <select v-model="condition.operator">
+              <option v-for="[value, label] in operators" :key="value" :value="value">
+                {{ label }}
+              </option>
+            </select>
+
+            <textarea
+              v-if="condition.operator === 'containsAny'"
+              rows="4"
+              :value="editValue(condition)"
+              placeholder="One value per line"
+              @input="setConditionValue(condition, $event.target.value)"
+            />
+
+            <input
+              v-else
+              :type="['gt','gte','lt','lte'].includes(condition.operator) ? 'number' : 'text'"
+              :value="editValue(condition)"
+              @input="setConditionValue(condition, $event.target.value)"
+            />
+
+            <button class="icon-button" @click="removeCondition(index)">×</button>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="secondary" @click="addCondition">Add condition</button>
+          <div class="modal-footer-actions">
+            <button class="ghost" @click="closeRuleModal">Cancel</button>
+            <button class="primary" @click="saveRule">Save rule</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</template>
+
+<style>
+:root {
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  color: #172033;
+  background: #f4f6f8;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f4f6f8;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.topbar {
+  background: #dbeafe;
+  color: #172033;
+  padding: 28px 36px 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.brand-block {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding-bottom: 12px;
+}
+
+.brand-logo {
+  width: 82px;
+  height: 82px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.topbar h1 {
+  margin: 3px 0 4px;
+  font-size: 32px;
+  line-height: 1;
+}
+
+.topbar p {
+  margin: 0 0 24px;
+  color: #475569;
+}
+
+.eyebrow {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #64748b;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.tabs button {
+  border: 0;
+  background: transparent;
+  color: #475569;
+  padding: 14px 18px;
+  border-radius: 10px 10px 0 0;
+}
+
+.tabs button.active {
+  color: #172033;
+  background: #f4f6f8;
+}
+
+main {
+  padding: 28px 36px 48px;
+}
+
+.panel {
+  background: white;
+  border: 1px solid #e2e7ee;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 6px 24px rgba(16, 24, 39, 0.05);
+}
+
+.stack {
+  display: grid;
+  gap: 20px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.section-header h2 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.section-header p {
+  margin: 0;
+  color: #6b7280;
+}
+
+.notice {
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.notice.error {
+  background: #fff1f2;
+  color: #9f1239;
+  border: 1px solid #fecdd3;
+}
+
+.notice.success {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.upload-card,
+.add-category,
+.button-row,
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.upload-card {
+  padding: 18px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #fafbfc;
+}
+
+button {
+  border-radius: 9px;
+  padding: 9px 13px;
+  border: 1px solid transparent;
+}
+
+.primary {
+  background: #2563eb;
+  color: white;
+}
+
+.primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.secondary {
+  background: white;
+  border-color: #cbd5e1;
+  color: #24324a;
+}
+
+.ghost {
+  background: transparent;
+  color: #526074;
+}
+
+.danger {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #be123c;
+}
+
+.small {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.review-button {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+tr.reviewed td {
+  background: #f3f4f6;
+  color: #8a94a3;
+}
+
+tr.reviewed .merchant {
+  color: #697386;
+}
+
+tr.reviewed select {
+  opacity: 0.72;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.summary-grid article {
+  padding: 16px;
+  border: 1px solid #e2e7ee;
+  border-radius: 12px;
+  background: #fbfcfd;
+}
+
+.summary-grid span {
+  display: block;
+  color: #718096;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.summary-grid strong {
+  font-size: 24px;
+}
+
+.completion-card {
+  border: 1px solid #a7f3d0;
+  border-radius: 14px;
+  background: #f0fdf4;
+  padding: 18px;
+}
+
+.completion-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.completion-title {
+  color: #047857;
+  font-weight: 750;
+  font-size: 18px;
+}
+
+.export-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.completion-card p {
+  margin: 4px 0 14px;
+  color: #4b6358;
+}
+
+.completion-table {
+  display: grid;
+  gap: 7px;
+}
+
+.completion-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 140px 120px;
+  gap: 12px;
+  align-items: center;
+  padding: 7px 0;
+  border-top: 1px solid #d1fae5;
+}
+
+.completion-row strong {
+  text-align: right;
+}
+
+.table-card {
+  border: 1px solid #e2e7ee;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-bottom: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bulk-actions select {
+  min-width: 220px;
+}
+
+.table-toolbar {
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e7ee;
+  background: #fafbfc;
+  color: #667085;
+  font-size: 14px;
+}
+
+.table-scroll {
+  overflow: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1080px;
+}
+
+th,
+td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #edf0f3;
+  vertical-align: top;
+  text-align: left;
+}
+
+th {
+  font-size: 12px;
+  color: #667085;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: white;
+  position: sticky;
+  top: 0;
+}
+
+td {
+  font-size: 14px;
+}
+
+.select-column {
+  width: 42px;
+  text-align: center;
+}
+
+.select-column input {
+  width: auto;
+}
+
+.money {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.merchant {
+  font-weight: 600;
+}
+
+.merchant-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.group-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.group-note {
+  margin-top: 3px;
+  color: #7c8798;
+  font-size: 12px;
+}
+
+.rule-hit {
+  margin-top: 3px;
+  font-size: 12px;
+  color: #7c8798;
+}
+
+select,
+input,
+textarea {
+  width: 100%;
+  border: 1px solid #cfd7e3;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: white;
+  color: #172033;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pill.matched {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.pill.inactive {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox-row input {
+  width: auto;
+}
+
+.rules-layout {
+  display: grid;
+  grid-template-columns: minmax(340px, 0.9fr) minmax(460px, 1.2fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.form-grid {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.form-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-grid label > span {
+  display: block;
+  font-size: 13px;
+  color: #667085;
+  margin-bottom: 6px;
+}
+
+.conditions {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.condition-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.icon-button {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: white;
+  border-color: #d7dde6;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.rule-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.rule-card {
+  border: 1px solid #e2e7ee;
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.rule-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.priority {
+  color: #7c8798;
+  font-size: 12px;
+}
+
+.rule-category {
+  margin-top: 4px;
+  color: #2563eb;
+  font-size: 14px;
+}
+
+.rule-card ul {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  color: #667085;
+  font-size: 13px;
+}
+
+.rule-actions {
+  display: flex;
+  gap: 8px;
+  align-items: start;
+}
+
+.history-header {
+  align-items: center;
+}
+
+.history-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.history-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  border: 1px solid #e2e7ee;
+  border-radius: 12px;
+  padding: 16px;
+  background: #fbfcfd;
+}
+
+.history-card.current {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.history-title-row,
+.history-stats,
+.history-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.history-title-row strong {
+  font-size: 16px;
+}
+
+.history-meta {
+  margin-top: 5px;
+  color: #7c8798;
+  font-size: 13px;
+}
+
+.history-stats {
+  margin-top: 9px;
+  color: #526074;
+  font-size: 13px;
+}
+
+.history-stats span + span::before {
+  content: "•";
+  margin-right: 10px;
+  color: #9aa4b2;
+}
+
+.current-pill {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.history-empty {
+  margin-top: 20px;
+  padding: 28px;
+  text-align: center;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  color: #7c8798;
+}
+
+.category-list {
+  margin-top: 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.category-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(3px);
+}
+
+.modal-card {
+  width: min(900px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  background: white;
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.modal-header,
+.modal-footer,
+.modal-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal-header {
+  justify-content: space-between;
+}
+
+.modal-header h2 {
+  margin: 4px 0 0;
+}
+
+.modal-eyebrow {
+  color: #718096;
+}
+
+.modal-footer {
+  justify-content: space-between;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #e5e7eb;
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    padding: 22px 18px 0;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .brand-logo {
+    width: 68px;
+    height: 68px;
+  }
+
+  .tabs {
+    overflow-x: auto;
+  }
+
+  main {
+    padding: 20px 14px 32px;
+  }
+
+  .summary-grid,
+  .form-grid.two,
+  .rules-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .condition-row {
+    grid-template-columns: 1fr;
+  }
+
+  .category-row {
+    grid-template-columns: 1fr;
+  }
+
+  .completion-header,
+  .history-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .history-actions {
+    justify-content: flex-start;
+  }
+
+  .completion-row {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .completion-row strong {
+    text-align: left;
+  }
+}
+</style>
