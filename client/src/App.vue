@@ -715,10 +715,13 @@ function downloadStatement(format) {
 <template>
   <div class="app-shell">
     <header class="topbar">
-      <div>
-        <div class="eyebrow">Twin Building Inc.</div>
-        <h1>Cat Script</h1>
-        <p>American Express transaction categorizer</p>
+      <div class="brand-block">
+        <img src="/twin-logo.svg" alt="Twin Inc. logo" class="brand-logo" />
+        <div>
+          <div class="eyebrow">Twin Building Inc.</div>
+          <h1>Cat Script</h1>
+          <p>American Express transaction categorizer</p>
+        </div>
       </div>
 
       <nav class="tabs">
@@ -1392,6 +1395,19 @@ button {
   gap: 24px;
 }
 
+.brand-block {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.brand-logo {
+  width: 82px;
+  height: 82px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
 .topbar h1 {
   margin: 3px 0 4px;
   font-size: 32px;
@@ -2026,6 +2042,11 @@ textarea {
     padding: 22px 18px 0;
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .brand-logo {
+    width: 68px;
+    height: 68px;
   }
 
   .tabs {
