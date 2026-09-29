@@ -18,6 +18,8 @@ const ruleModalTransactionId = ref(null);
 const currentStatement = ref(null);
 const selectedTransactions = reactive({});
 const bulkCategoryId = ref("");
+const statementHistory = ref([]);
+const historyLoading = ref(false);
 
 const fields = [
   ["description", "Description"],
@@ -197,6 +199,7 @@ const categoryTotals = computed(() => {
 onMounted(async () => {
   await refreshSettings();
   await loadCurrentStatement();
+  await loadStatementHistory();
 });
 
 async function api(url, options = {}) {
@@ -239,6 +242,50 @@ function applyStatement(result) {
       reviewedTransactions[transaction.id] = true;
     }
   }
+}
+
+async function loadStatementHistory() {
+  historyLoading.value = true;
+  try {
+    statementHistory.value = await api("/api/statements");
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+async function openStatement(statementId) {
+  error.value = "";
+  success.value = "";
+
+  try {
+    const result = await api("/api/statements/" + statementId);
+    applyStatement(result);
+    activeTab.value = "import";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+function formatHistoryDate(value) {
+  if (!value) return "";
+  const date = new Date(value + "Z");
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD"
+  }).format(Number(value || 0));
 }
 
 async function loadCurrentStatement() {
@@ -294,6 +341,7 @@ async function importCsv() {
     ruleModalOpen.value = false;
     ruleModalTransactionId.value = null;
     success.value = "Import complete.";
+    await loadStatementHistory();
   } catch (err) {
     error.value = err.message;
   } finally {
@@ -682,6 +730,12 @@ function downloadStatement(format) {
         </button>
         <button :class="{ active: activeTab === 'categories' }" @click="activeTab = 'categories'">
           Categories
+        </button>
+        <button
+          :class="{ active: activeTab === 'history' }"
+          @click="activeTab = 'history'; loadStatementHistory()"
+        >
+          History
         </button>
       </nav>
     </header>
@@ -1088,7 +1142,7 @@ function downloadStatement(format) {
         </div>
       </section>
 
-      <section v-else class="panel">
+      <section v-else-if="activeTab === 'categories'" class="panel">
         <div class="section-header">
           <div>
             <h2>Categories</h2>
@@ -1115,6 +1169,88 @@ function downloadStatement(format) {
             </label>
             <button class="secondary" @click="updateCategory(category)">Save</button>
           </div>
+        </div>
+      </section>
+
+      <section v-else class="panel">
+        <div class="section-header history-header">
+          <div>
+            <h2>Statement history</h2>
+            <p>Open any prior import and continue reviewing or download its report.</p>
+          </div>
+
+          <button class="secondary" @click="loadStatementHistory">
+            Refresh
+          </button>
+        </div>
+
+        <div v-if="historyLoading" class="history-empty">
+          Loading statement history…
+        </div>
+
+        <div v-else-if="!statementHistory.length" class="history-empty">
+          No saved statements yet.
+        </div>
+
+        <div v-else class="history-list">
+          <article
+            v-for="statement in statementHistory"
+            :key="statement.id"
+            class="history-card"
+            :class="{ current: currentStatement?.id === statement.id }"
+          >
+            <div class="history-main">
+              <div class="history-title-row">
+                <strong>{{ statement.filename }}</strong>
+                <span
+                  class="pill"
+                  :class="statement.completed ? 'matched' : 'inactive'"
+                >
+                  {{ statement.completed ? "Completed" : "In progress" }}
+                </span>
+                <span
+                  v-if="currentStatement?.id === statement.id"
+                  class="pill current-pill"
+                >
+                  Open now
+                </span>
+              </div>
+
+              <div class="history-meta">
+                Imported {{ formatHistoryDate(statement.imported_at) }}
+              </div>
+
+              <div class="history-stats">
+                <span>{{ statement.transactions }} transactions</span>
+                <span>{{ formatCurrency(statement.total) }}</span>
+                <span v-if="statement.needReview">
+                  {{ statement.needReview }} need review
+                </span>
+                <span v-else>Review complete</span>
+              </div>
+            </div>
+
+            <div class="history-actions">
+              <button class="primary" @click="openStatement(statement.id)">
+                Open
+              </button>
+
+              <template v-if="statement.completed">
+                <button
+                  class="secondary"
+                  @click="window.location.href = '/api/statements/' + statement.id + '/export.csv'"
+                >
+                  CSV
+                </button>
+                <button
+                  class="secondary"
+                  @click="window.location.href = '/api/statements/' + statement.id + '/report.pdf'"
+                >
+                  PDF
+                </button>
+              </template>
+            </div>
+          </article>
         </div>
       </section>
     </main>
@@ -1753,6 +1889,77 @@ textarea {
   align-items: start;
 }
 
+.history-header {
+  align-items: center;
+}
+
+.history-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.history-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  border: 1px solid #e2e7ee;
+  border-radius: 12px;
+  padding: 16px;
+  background: #fbfcfd;
+}
+
+.history-card.current {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.history-title-row,
+.history-stats,
+.history-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.history-title-row strong {
+  font-size: 16px;
+}
+
+.history-meta {
+  margin-top: 5px;
+  color: #7c8798;
+  font-size: 13px;
+}
+
+.history-stats {
+  margin-top: 9px;
+  color: #526074;
+  font-size: 13px;
+}
+
+.history-stats span + span::before {
+  content: "•";
+  margin-right: 10px;
+  color: #9aa4b2;
+}
+
+.current-pill {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.history-empty {
+  margin-top: 20px;
+  padding: 28px;
+  text-align: center;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  color: #7c8798;
+}
+
 .category-list {
   margin-top: 18px;
   display: grid;
@@ -1843,8 +2050,14 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .completion-header {
+  .completion-header,
+  .history-card {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .history-actions {
+    justify-content: flex-start;
   }
 
   .completion-row {
