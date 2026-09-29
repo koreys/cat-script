@@ -716,7 +716,7 @@ function downloadStatement(format) {
   <div class="app-shell">
     <header class="topbar">
       <div class="brand-block">
-        <img src="/twin-logo.svg" alt="Twin Inc. logo" class="brand-logo" />
+        <img src="/twin-logo.png" alt="Twin Inc. logo" class="brand-logo" />
         <div>
           <div class="eyebrow">Twin Building Inc.</div>
           <h1>Cat Script</h1>
