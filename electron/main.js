@@ -3,6 +3,7 @@ const path = require("path");
 const { app, BrowserWindow, shell } = require("electron");
 
 let backendServer = null;
+let backendPort = null;
 
 function copyLegacyDatabaseIfNeeded(targetPath) {
   if (fs.existsSync(targetPath)) return;
@@ -21,7 +22,11 @@ function copyLegacyDatabaseIfNeeded(targetPath) {
   }
 }
 
-async function createWindow() {
+async function ensureBackend() {
+  if (backendServer && backendPort) {
+    return backendPort;
+  }
+
   const dataDir = app.getPath("userData");
   const dbPath = path.join(dataDir, "cat-script.sqlite");
 
@@ -30,7 +35,15 @@ async function createWindow() {
 
   const { startServer } = require("../server/index");
   const started = await startServer(0);
+
   backendServer = started.server;
+  backendPort = started.port;
+
+  return backendPort;
+}
+
+async function createWindow() {
+  const port = await ensureBackend();
 
   const window = new BrowserWindow({
     width: 1440,
@@ -51,7 +64,7 @@ async function createWindow() {
     return { action: "deny" };
   });
 
-  await window.loadURL("http://127.0.0.1:" + started.port);
+  await window.loadURL("http://127.0.0.1:" + port);
 }
 
 app.whenReady().then(async () => {
@@ -73,6 +86,7 @@ app.on("before-quit", () => {
   if (backendServer) {
     backendServer.close();
     backendServer = null;
+    backendPort = null;
   }
 });
 
