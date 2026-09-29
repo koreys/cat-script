@@ -2,10 +2,13 @@ const fs = require("fs");
 const path = require("path");
 const Database = require("better-sqlite3");
 
-const dataDir = path.join(__dirname, "data");
-fs.mkdirSync(dataDir, { recursive: true });
+const dbPath =
+  process.env.CAT_SCRIPT_DB ||
+  path.join(__dirname, "data", "cat-script.sqlite");
 
-const db = new Database(process.env.CAT_SCRIPT_DB || path.join(dataDir, "cat-script.sqlite"));
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+
+const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
 
 db.exec(
